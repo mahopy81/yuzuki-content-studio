@@ -5,6 +5,7 @@ import {
   createSampleDataAction,
   deleteContentItemAction,
   deleteThemeAction,
+  generateContentSetAction,
   saveContentItemAction,
   saveThemeAction,
   updateContentItemAction,
@@ -126,6 +127,7 @@ export function DashboardClient({
   const [contentForm, setContentForm] = useState<ContentItemInput>(emptyContentForm);
   const [editingThemeId, setEditingThemeId] = useState<string | null>(null);
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
+  const [generatingThemeId, setGeneratingThemeId] = useState<string | null>(null);
   const [notice, setNotice] = useState(
     backup
       ? "Notionから読み込めなかったため、ブラウザ内のバックアップを表示しています。"
@@ -434,16 +436,34 @@ export function DashboardClient({
     });
   }
 
+  function generateContentSet(theme: Theme) {
+    setGeneratingThemeId(theme.id);
+    startTransition(async () => {
+      const result = await generateContentSetAction(theme.id);
+      setGeneratingThemeId(null);
+
+      const generatedData = result.data;
+
+      if (generatedData) {
+        setContentItems((current) => [...generatedData.contentItems, ...current]);
+        setNotice("テーマから各媒体のコンテンツ案を一括生成し、Notionに保存しました。");
+        return;
+      }
+
+      setNotice(`一括生成に失敗しました。${result.error ?? ""}`);
+    });
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 rounded-lg border border-white/70 bg-white/68 p-6 shadow-soft backdrop-blur md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-medium text-champagne">Phase 1</p>
+          <p className="text-sm font-medium text-champagne">Phase 2</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-ink">
             Yuzuki Content Studio
           </h1>
           <p className="mt-2 text-sm leading-6 text-stone-600">
-            テーマと投稿コンテンツをNotionに保存しながら管理するMVPです。
+            テーマから各媒体のコンテンツ案を一括生成し、Notionに保存できるMVPです。
           </p>
         </div>
         <div className="flex flex-col gap-2 text-sm text-stone-600 md:items-end">
@@ -623,6 +643,13 @@ export function DashboardClient({
                   {theme.targetAudience || "ターゲット未入力"}
                 </p>
                 <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => generateContentSet(theme)}
+                    disabled={isPending || generatingThemeId === theme.id}
+                    className="rounded-md bg-ink px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
+                  >
+                    {generatingThemeId === theme.id ? "生成中" : "一括生成"}
+                  </button>
                   <button
                     onClick={() => selectTheme(theme)}
                     className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"

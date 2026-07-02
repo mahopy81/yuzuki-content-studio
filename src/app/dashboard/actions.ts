@@ -9,7 +9,8 @@ import {
   listContentItems,
   updateContentItem
 } from "@/services/notion/contentItems";
-import { createTheme, deleteTheme, listThemes, updateTheme } from "@/services/notion/themes";
+import { generatedContentToText, generateMockContentSet } from "@/services/ai/mockContent";
+import { createTheme, deleteTheme, getTheme, listThemes, updateTheme } from "@/services/notion/themes";
 import type { ContentItem, ContentItemInput, ContentStatus, Theme, ThemeInput } from "@/types/content";
 
 type ActionResult<T> = {
@@ -203,6 +204,94 @@ export async function createSampleDataAction(): Promise<
 
     revalidatePath("/dashboard");
     return { ok: true, data: { theme, contentItems } };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function generateContentSetAction(
+  themeId: string
+): Promise<ActionResult<{ contentItems: ContentItem[] }>> {
+  try {
+    const userId = await getUserId();
+    const theme = await getTheme(themeId);
+    const generated = generateMockContentSet({ theme });
+    const base = {
+      userId,
+      themeId: theme.id,
+      themeNotionPageId: theme.notionPageId,
+      status: "generated" as const,
+      cta: theme.cta,
+      memo: "Phase 2のモック一括生成で作成"
+    };
+
+    const inputs: ContentItemInput[] = [
+      {
+        ...base,
+        platform: "instagram",
+        contentType: "instagram_carousel",
+        title: generated.instagramCarousel.title,
+        body: generatedContentToText(generated.instagramCarousel)
+      },
+      {
+        ...base,
+        platform: "instagram",
+        contentType: "instagram_caption",
+        title: `${theme.mainTheme} Instagramキャプション`,
+        caption: `${generated.instagramCaption.hook}\n\n${generated.instagramCaption.body}\n\n${generated.instagramCaption.cta}`,
+        hashtags: generated.instagramCaption.hashtags
+      },
+      {
+        ...base,
+        platform: "instagram_reel",
+        contentType: "instagram_reel_script",
+        title: generated.instagramReel.title,
+        script: generatedContentToText(generated.instagramReel)
+      },
+      {
+        ...base,
+        platform: "youtube",
+        contentType: "youtube_script",
+        title: generated.youtube.title,
+        script: generatedContentToText(generated.youtube),
+        body: generated.youtube.description
+      },
+      ...generated.youtubeLives.map((livePlan, index) => ({
+        ...base,
+        platform: "youtube_live" as const,
+        contentType: "youtube_live_plan" as const,
+        title: livePlan.title,
+        scheduledDate: livePlan.scheduledDate,
+        script: generatedContentToText(livePlan),
+        memo: `週2本ライブ企画 ${index + 1}本目 / Phase 2モック生成`
+      })),
+      {
+        ...base,
+        platform: "note",
+        contentType: "note_article",
+        title: generated.note.title,
+        article: generatedContentToText(generated.note)
+      },
+      {
+        ...base,
+        platform: "threads",
+        contentType: "threads_post",
+        title: `${theme.mainTheme} Threads投稿案`,
+        body: generated.threads.posts.join("\n\n")
+      },
+      {
+        ...base,
+        platform: "x",
+        contentType: "x_post",
+        title: `${theme.mainTheme} X投稿案`,
+        body: generated.x.posts.join("\n\n")
+      }
+    ];
+
+    const contentItems = await Promise.all(inputs.map((input) => createContentItem(input)));
+
+    revalidatePath("/dashboard");
+    return { ok: true, data: { contentItems } };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
