@@ -90,6 +90,30 @@ Platformは `Instagram`, `Instagram Reel`, `YouTube`, `YouTube Live`, `note`, `T
 Content Typeは `Instagram Carousel`, `Instagram Caption`, `Instagram Reel Script`, `YouTube Script`, `YouTube Live Plan`, `note Article`, `Threads Post`, `X Post` を用意します。
 Statusは `Idea`, `Generated`, `Drafting`, `Review`, `Revision`, `Scheduled`, `Published`, `Analyzed`, `Rejected` を用意します。
 
+### Yuzuki Image Projects
+
+| 名前 | 種類 |
+| --- | --- |
+| Name | title |
+| Theme ID | rich_text |
+| Theme Title | rich_text |
+| Content Item ID | rich_text |
+| Content Title | rich_text |
+| Platform | select |
+| Image Type | select |
+| Status | select |
+| Format | rich_text |
+| Prompt | rich_text |
+| Negative Prompt | rich_text |
+| Reference URL | rich_text |
+| Output URL | rich_text |
+| Memo | rich_text |
+| Created At | date |
+| Updated At | date |
+
+Image Typeは `Instagram Carousel Design`, `Instagram Reel Cover`, `YouTube Thumbnail`, `YouTube Live Thumbnail`, `note Eyecatch`, `Threads Image`, `X Image` を用意します。
+Statusは `Idea`, `Prompt Ready`, `Generating`, `Review`, `Approved`, `Published`, `Rejected` を用意します。
+
 ## 7. DB IDを取得する
 
 Notion DBを開いたときのURLから取得します。

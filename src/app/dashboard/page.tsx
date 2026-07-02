@@ -21,6 +21,7 @@ export default async function DashboardPage() {
       <DashboardClient
         initialThemes={result.data?.themes ?? []}
         initialContentItems={result.data?.contentItems ?? []}
+        initialImageProjects={result.data?.imageProjects ?? []}
         initialError={result.ok ? undefined : result.error}
         userEmail={user?.email}
       />

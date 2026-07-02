@@ -4,17 +4,23 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   createSampleDataAction,
   deleteContentItemAction,
+  deleteImageProjectAction,
   deleteThemeAction,
   generateContentSetAction,
+  createImageProjectFromContentAction,
   saveContentItemAction,
+  saveImageProjectAction,
   saveThemeAction,
   updateContentItemAction,
+  updateImageProjectAction,
   updateContentStatusAction,
   updateThemeAction
 } from "./actions";
 import {
   contentStatusOptions,
   contentTypeOptions,
+  imageProjectStatusOptions,
+  imageProjectTypeOptions,
   labelFor,
   liveStreamTypeOptions,
   platformOptions,
@@ -24,6 +30,10 @@ import {
   type ContentItemInput,
   type ContentStatus,
   type ContentType,
+  type ImageProject,
+  type ImageProjectInput,
+  type ImageProjectStatus,
+  type ImageProjectType,
   type LiveStreamType,
   type Platform,
   type Theme,
@@ -36,6 +46,7 @@ import {
 type DashboardClientProps = {
   initialThemes: Theme[];
   initialContentItems: ContentItem[];
+  initialImageProjects: ImageProject[];
   initialError?: string;
   userEmail?: string | null;
 };
@@ -43,6 +54,7 @@ type DashboardClientProps = {
 type BackupData = {
   themes: Theme[];
   contentItems: ContentItem[];
+  imageProjects?: ImageProject[];
 };
 
 const backupKey = "yuzuki-content-studio-phase1";
@@ -77,6 +89,23 @@ const emptyContentForm: ContentItemInput = {
   article: "",
   hashtags: [],
   imageProjectId: "",
+  memo: ""
+};
+
+const emptyImageProjectForm: ImageProjectInput = {
+  themeId: "",
+  themeTitle: "",
+  contentItemId: "",
+  contentTitle: "",
+  platform: "instagram",
+  imageType: "instagram_carousel_design",
+  title: "",
+  status: "idea",
+  format: "1:1 / 1080x1080",
+  prompt: "",
+  negativePrompt: "",
+  referenceUrl: "",
+  outputUrl: "",
   memo: ""
 };
 
@@ -229,6 +258,73 @@ function parseLivePlan(form: ContentItemInput, theme?: Theme): YouTubeLivePlan {
   }
 }
 
+function imageTypeForContent(contentItem?: ContentItem): ImageProjectType {
+  if (!contentItem) {
+    return "instagram_carousel_design";
+  }
+
+  if (contentItem.contentType === "youtube_live_plan") {
+    return "youtube_live_thumbnail";
+  }
+
+  if (contentItem.platform === "youtube") {
+    return "youtube_thumbnail";
+  }
+
+  if (contentItem.contentType === "instagram_reel_script") {
+    return "instagram_reel_cover";
+  }
+
+  if (contentItem.platform === "note") {
+    return "note_eyecatch";
+  }
+
+  if (contentItem.platform === "threads") {
+    return "threads_image";
+  }
+
+  if (contentItem.platform === "x") {
+    return "x_image";
+  }
+
+  return "instagram_carousel_design";
+}
+
+function formatForImageType(imageType: ImageProjectType) {
+  if (imageType === "youtube_thumbnail" || imageType === "youtube_live_thumbnail") {
+    return "16:9 / 1280x720";
+  }
+
+  if (imageType === "instagram_reel_cover") {
+    return "9:16 / 1080x1920";
+  }
+
+  if (imageType === "x_image") {
+    return "16:9";
+  }
+
+  return "1:1 / 1080x1080";
+}
+
+function buildImagePrompt(contentItem?: ContentItem, theme?: Theme) {
+  const title = contentItem?.title || theme?.mainTheme || "SNS投稿";
+  const themeText = theme?.mainTheme || title;
+  const target = theme?.targetAudience || "発信を見ている読者";
+  const cta = contentItem?.cta || theme?.cta || "";
+
+  return [
+    `目的: ${title}に使うSNS画像を作る。`,
+    `テーマ: ${themeText}`,
+    `届けたい相手: ${target}`,
+    "雰囲気: やさしく信頼感があり、上品で読みやすい。余白を広めに取る。",
+    "構図: メインコピーが中央で読みやすく、背景は情報を邪魔しない。",
+    cta ? `CTA: ${cta}` : "",
+    "注意: 小さな文字を詰め込みすぎず、スマホ画面で一瞬で意味が伝わる画像にする。"
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function readBackup() {
   if (typeof window === "undefined") {
     return undefined;
@@ -250,17 +346,26 @@ function readBackup() {
 export function DashboardClient({
   initialThemes,
   initialContentItems,
+  initialImageProjects,
   initialError,
   userEmail
 }: DashboardClientProps) {
-  const shouldUseBackup = initialThemes.length === 0 && initialContentItems.length === 0;
+  const shouldUseBackup =
+    initialThemes.length === 0 && initialContentItems.length === 0 && initialImageProjects.length === 0;
   const backup = shouldUseBackup ? readBackup() : undefined;
   const [themes, setThemes] = useState(backup?.themes ?? initialThemes);
   const [contentItems, setContentItems] = useState(backup?.contentItems ?? initialContentItems);
+  const [imageProjects, setImageProjects] = useState(
+    backup?.imageProjects ?? initialImageProjects
+  );
   const [themeForm, setThemeForm] = useState<ThemeInput>(emptyThemeForm);
   const [contentForm, setContentForm] = useState<ContentItemInput>(emptyContentForm);
+  const [imageProjectForm, setImageProjectForm] =
+    useState<ImageProjectInput>(emptyImageProjectForm);
   const [editingThemeId, setEditingThemeId] = useState<string | null>(null);
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
+  const [editingImageProjectId, setEditingImageProjectId] = useState<string | null>(null);
+  const [creatingImageForContentId, setCreatingImageForContentId] = useState<string | null>(null);
   const [generatingThemeId, setGeneratingThemeId] = useState<string | null>(null);
   const [notice, setNotice] = useState(
     backup
@@ -276,8 +381,8 @@ export function DashboardClient({
       return;
     }
 
-    localStorage.setItem(backupKey, JSON.stringify({ themes, contentItems }));
-  }, [contentItems, themes]);
+    localStorage.setItem(backupKey, JSON.stringify({ themes, contentItems, imageProjects }));
+  }, [contentItems, imageProjects, themes]);
 
   const currentWeekTheme = themes.find((theme) => theme.status === "active") ?? themes[0];
 
@@ -290,6 +395,9 @@ export function DashboardClient({
       review: countByStatus("review"),
       scheduled: countByStatus("scheduled"),
       published: countByStatus("published"),
+      imageWaiting: imageProjects.filter((project) =>
+        ["idea", "prompt_ready", "generating", "review"].includes(project.status)
+      ).length,
       analysisWaiting: countByStatus("published"),
       liveSchedules: contentItems.filter((item) => item.platform === "youtube_live").slice(0, 3),
       upcoming: contentItems
@@ -297,7 +405,7 @@ export function DashboardClient({
         .sort((a, b) => (a.scheduledDate ?? "").localeCompare(b.scheduledDate ?? ""))
         .slice(0, 5)
     };
-  }, [contentItems]);
+  }, [contentItems, imageProjects]);
 
   const platformCounts = useMemo(() => {
     return platformOptions.map((platform) => ({
@@ -391,6 +499,40 @@ export function DashboardClient({
       ...input,
       themeNotionPageId: selectedTheme?.notionPageId ?? input.themeNotionPageId
     };
+  }
+
+  function selectImageProject(imageProject: ImageProject) {
+    setEditingImageProjectId(imageProject.id);
+    setImageProjectForm({
+      userId: imageProject.userId,
+      themeId: imageProject.themeId ?? "",
+      themeTitle: imageProject.themeTitle ?? "",
+      contentItemId: imageProject.contentItemId ?? "",
+      contentTitle: imageProject.contentTitle ?? "",
+      platform: imageProject.platform,
+      imageType: imageProject.imageType,
+      title: imageProject.title,
+      status: imageProject.status,
+      format: imageProject.format,
+      prompt: imageProject.prompt,
+      negativePrompt: imageProject.negativePrompt ?? "",
+      referenceUrl: imageProject.referenceUrl ?? "",
+      outputUrl: imageProject.outputUrl ?? "",
+      memo: imageProject.memo ?? ""
+    });
+  }
+
+  function resetImageProjectForm() {
+    setEditingImageProjectId(null);
+    setImageProjectForm({
+      ...emptyImageProjectForm,
+      themeId: themes[0]?.id ?? "",
+      themeTitle: themes[0]?.mainTheme ?? ""
+    });
+  }
+
+  function updateImageProjectForm(input: Partial<ImageProjectInput>) {
+    setImageProjectForm((form) => ({ ...form, ...input }));
   }
 
   function submitTheme() {
@@ -494,6 +636,110 @@ export function DashboardClient({
     });
   }
 
+  function submitImageProject() {
+    startTransition(async () => {
+      const selectedTheme = themes.find((theme) => theme.id === imageProjectForm.themeId);
+      const selectedContent = contentItems.find(
+        (item) => item.id === imageProjectForm.contentItemId
+      );
+      const input: ImageProjectInput = {
+        ...imageProjectForm,
+        themeTitle: selectedTheme?.mainTheme ?? imageProjectForm.themeTitle,
+        contentTitle: selectedContent?.title ?? imageProjectForm.contentTitle,
+        title: imageProjectForm.title.trim(),
+        prompt: imageProjectForm.prompt.trim()
+      };
+
+      if (!input.title || !input.prompt) {
+        setNotice("画像プロジェクト名とプロンプトは必須です。");
+        return;
+      }
+
+      if (editingImageProjectId) {
+        const result = await updateImageProjectAction(editingImageProjectId, input);
+        const updatedProject =
+          result.data ??
+          ({
+            ...imageProjects.find((project) => project.id === editingImageProjectId),
+            ...input,
+            updatedAt: nowIso()
+          } as ImageProject);
+
+        setImageProjects((current) =>
+          current.map((project) =>
+            project.id === editingImageProjectId ? updatedProject : project
+          )
+        );
+        setNotice(result.ok ? "画像プロジェクトをNotionに保存しました。" : `ローカル更新: ${result.error}`);
+      } else {
+        const result = await saveImageProjectAction(input);
+        const createdProject =
+          result.data ??
+          ({
+            ...input,
+            id: localId("image"),
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          } satisfies ImageProject);
+
+        setImageProjects((current) => [createdProject, ...current]);
+        setNotice(
+          result.ok
+            ? "画像プロジェクトをNotionに保存しました。"
+            : `Notion保存に失敗したため、ブラウザにバックアップしました。${result.error}`
+        );
+      }
+
+      resetImageProjectForm();
+    });
+  }
+
+  function createImageProjectFromContent(contentItem: ContentItem) {
+    const theme = themes.find((themeItem) => themeItem.id === contentItem.themeId);
+    setCreatingImageForContentId(contentItem.id);
+
+    startTransition(async () => {
+      const result = await createImageProjectFromContentAction(contentItem, theme);
+      setCreatingImageForContentId(null);
+
+      const imageProject = result.data;
+
+      if (imageProject) {
+        setImageProjects((current) => [imageProject, ...current]);
+        setContentItems((current) =>
+          current.map((item) =>
+            item.id === contentItem.id ? { ...item, imageProjectId: imageProject.id } : item
+          )
+        );
+        setNotice("投稿から画像プロジェクトを作成し、Notionに保存しました。");
+        return;
+      }
+
+      const imageType = imageTypeForContent(contentItem);
+      const localProject: ImageProject = {
+        ...emptyImageProjectForm,
+        id: localId("image"),
+        themeId: theme?.id ?? contentItem.themeId,
+        themeTitle: theme?.mainTheme ?? "",
+        contentItemId: contentItem.id,
+        contentTitle: contentItem.title,
+        platform: contentItem.platform,
+        imageType,
+        title: `${contentItem.title} 画像案`,
+        status: "prompt_ready",
+        format: formatForImageType(imageType),
+        prompt: buildImagePrompt(contentItem, theme),
+        negativePrompt: "文字が多すぎる、読みにくい、暗すぎる、過度な装飾、低解像度",
+        memo: `Notion保存に失敗したためローカル作成: ${result.error ?? ""}`,
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      };
+
+      setImageProjects((current) => [localProject, ...current]);
+      setNotice(`画像プロジェクトをブラウザにバックアップしました。${result.error ?? ""}`);
+    });
+  }
+
   function changeContentStatus(id: string, status: ContentStatus) {
     setContentItems((current) =>
       current.map((item) => (item.id === id ? { ...item, status, updatedAt: nowIso() } : item))
@@ -540,6 +786,23 @@ export function DashboardClient({
       if (result.ok) {
         setContentItems((current) => current.filter((item) => item.id !== id));
         setNotice("コンテンツを削除しました。");
+      } else {
+        setNotice(`削除できませんでした。${result.error}`);
+      }
+    });
+  }
+
+  function removeImageProject(id: string) {
+    if (!confirm("この画像プロジェクトを削除しますか？ Notion上ではアーカイブされます。")) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = id.startsWith("image-") ? { ok: true } : await deleteImageProjectAction(id);
+
+      if (result.ok) {
+        setImageProjects((current) => current.filter((project) => project.id !== id));
+        setNotice("画像プロジェクトを削除しました。");
       } else {
         setNotice(`削除できませんでした。${result.error}`);
       }
@@ -615,12 +878,12 @@ export function DashboardClient({
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 rounded-lg border border-white/70 bg-white/68 p-6 shadow-soft backdrop-blur md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-medium text-champagne">Phase 3</p>
+          <p className="text-sm font-medium text-champagne">Phase 4</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-ink">
             Yuzuki Content Studio
           </h1>
           <p className="mt-2 text-sm leading-6 text-stone-600">
-            各媒体の投稿案を編集し、ステータスやメモと一緒にNotionへ保存できます。
+            投稿案と画像制作プロジェクトをまとめて管理し、Notionへ保存できます。
           </p>
         </div>
         <div className="flex flex-col gap-2 text-sm text-stone-600 md:items-end">
@@ -645,7 +908,7 @@ export function DashboardClient({
         <MetricCard label="作成中" value={summary.drafting.toString()} />
         <MetricCard label="確認待ち" value={summary.review.toString()} />
         <MetricCard label="予約済み" value={summary.scheduled.toString()} />
-        <MetricCard label="投稿済み" value={summary.published.toString()} />
+        <MetricCard label="画像制作中" value={summary.imageWaiting.toString()} />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -950,6 +1213,189 @@ export function DashboardClient({
         </div>
       </Panel>
 
+      <Panel title="画像プロジェクト作成・編集">
+        <div className="grid gap-3 md:grid-cols-3">
+          <SelectSimpleField
+            label="テーマ"
+            value={imageProjectForm.themeId ?? ""}
+            options={themes.map((theme) => ({ value: theme.id, label: theme.mainTheme }))}
+            onChange={(value) => {
+              const selectedTheme = themes.find((theme) => theme.id === value);
+              updateImageProjectForm({
+                themeId: value,
+                themeTitle: selectedTheme?.mainTheme ?? ""
+              });
+            }}
+          />
+          <SelectSimpleField
+            label="関連投稿"
+            value={imageProjectForm.contentItemId ?? ""}
+            options={contentItems.map((item) => ({ value: item.id, label: item.title }))}
+            onChange={(value) => {
+              const selectedContent = contentItems.find((item) => item.id === value);
+              const selectedTheme = themes.find((theme) => theme.id === selectedContent?.themeId);
+              const imageType = imageTypeForContent(selectedContent);
+
+              updateImageProjectForm({
+                contentItemId: value,
+                contentTitle: selectedContent?.title ?? "",
+                themeId: selectedTheme?.id ?? imageProjectForm.themeId,
+                themeTitle: selectedTheme?.mainTheme ?? imageProjectForm.themeTitle,
+                platform: selectedContent?.platform ?? imageProjectForm.platform,
+                imageType,
+                title: selectedContent ? `${selectedContent.title} 画像案` : imageProjectForm.title,
+                format: formatForImageType(imageType),
+                prompt: buildImagePrompt(selectedContent, selectedTheme),
+                negativePrompt:
+                  imageProjectForm.negativePrompt ||
+                  "文字が多すぎる、読みにくい、暗すぎる、過度な装飾、低解像度"
+              });
+            }}
+          />
+          <TextField
+            label="画像プロジェクト名"
+            value={imageProjectForm.title}
+            onChange={(value) => updateImageProjectForm({ title: value })}
+          />
+          <SelectField
+            label="媒体"
+            value={imageProjectForm.platform}
+            options={platformOptions}
+            onChange={(value) => updateImageProjectForm({ platform: value as Platform })}
+          />
+          <SelectField
+            label="画像タイプ"
+            value={imageProjectForm.imageType}
+            options={imageProjectTypeOptions}
+            onChange={(value) => {
+              const imageType = value as ImageProjectType;
+              updateImageProjectForm({
+                imageType,
+                format: formatForImageType(imageType)
+              });
+            }}
+          />
+          <SelectField
+            label="ステータス"
+            value={imageProjectForm.status}
+            options={imageProjectStatusOptions}
+            onChange={(value) =>
+              updateImageProjectForm({ status: value as ImageProjectStatus })
+            }
+          />
+          <TextField
+            label="サイズ・形式"
+            value={imageProjectForm.format}
+            placeholder="1:1 / 1080x1080"
+            onChange={(value) => updateImageProjectForm({ format: value })}
+          />
+          <TextField
+            label="参考URL"
+            value={imageProjectForm.referenceUrl ?? ""}
+            onChange={(value) => updateImageProjectForm({ referenceUrl: value })}
+          />
+          <TextField
+            label="完成URL"
+            value={imageProjectForm.outputUrl ?? ""}
+            onChange={(value) => updateImageProjectForm({ outputUrl: value })}
+          />
+          <div className="md:col-span-2">
+            <TextAreaField
+              label="画像生成プロンプト"
+              value={imageProjectForm.prompt}
+              rows={8}
+              onChange={(value) => updateImageProjectForm({ prompt: value })}
+            />
+          </div>
+          <TextAreaField
+            label="避けたい表現"
+            value={imageProjectForm.negativePrompt ?? ""}
+            rows={8}
+            onChange={(value) => updateImageProjectForm({ negativePrompt: value })}
+          />
+          <div className="md:col-span-3">
+            <TextAreaField
+              label="制作メモ"
+              value={imageProjectForm.memo ?? ""}
+              onChange={(value) => updateImageProjectForm({ memo: value })}
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            onClick={submitImageProject}
+            disabled={isPending}
+            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {editingImageProjectId ? "画像プロジェクトを保存" : "画像プロジェクトを作成"}
+          </button>
+          <button
+            onClick={resetImageProjectForm}
+            className="rounded-md border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-ink"
+          >
+            入力をリセット
+          </button>
+        </div>
+      </Panel>
+
+      <Panel title="画像プロジェクト一覧">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {imageProjects.length === 0 ? (
+            <p className="text-sm text-stone-500">まだ画像プロジェクトがありません。</p>
+          ) : (
+            imageProjects.map((project) => (
+              <article
+                key={project.id}
+                className="rounded-lg border border-stone-200 bg-white/72 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-stone-500">
+                      {labelFor(imageProjectTypeOptions, project.imageType)} / {project.format}
+                    </p>
+                    <h3 className="mt-1 text-base font-semibold text-ink">{project.title}</h3>
+                  </div>
+                  <span className="rounded-full bg-rose px-3 py-1 text-xs text-ink">
+                    {labelFor(imageProjectStatusOptions, project.status)}
+                  </span>
+                </div>
+                <p className="mt-3 line-clamp-3 text-sm leading-6 text-stone-600">
+                  {project.prompt || "プロンプト未入力"}
+                </p>
+                <div className="mt-3 space-y-1 text-xs text-stone-500">
+                  <p>テーマ: {project.themeTitle || "未設定"}</p>
+                  <p>関連投稿: {project.contentTitle || "未設定"}</p>
+                  {project.outputUrl ? (
+                    <a
+                      href={project.outputUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block font-medium text-ink underline decoration-champagne underline-offset-4"
+                    >
+                      完成URLを開く
+                    </a>
+                  ) : null}
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => selectImageProject(project)}
+                    className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+                  >
+                    編集
+                  </button>
+                  <button
+                    onClick={() => removeImageProject(project.id)}
+                    className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700"
+                  >
+                    削除
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </Panel>
+
       <Panel title="コンテンツ一覧">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] border-separate border-spacing-0 text-left text-sm">
@@ -1014,6 +1460,13 @@ export function DashboardClient({
                             className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
                           >
                             編集
+                          </button>
+                          <button
+                            onClick={() => createImageProjectFromContent(item)}
+                            disabled={isPending || creatingImageForContentId === item.id}
+                            className="rounded-md border border-champagne/60 bg-rose px-3 py-2 text-xs font-medium text-ink disabled:opacity-60"
+                          >
+                            {creatingImageForContentId === item.id ? "作成中" : "画像案"}
                           </button>
                           <button
                             onClick={() => removeContentItem(item.id)}

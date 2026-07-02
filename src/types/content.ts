@@ -30,6 +30,24 @@ export type ContentType =
   | "threads_post"
   | "x_post";
 
+export type ImageProjectType =
+  | "instagram_carousel_design"
+  | "instagram_reel_cover"
+  | "youtube_thumbnail"
+  | "youtube_live_thumbnail"
+  | "note_eyecatch"
+  | "threads_image"
+  | "x_image";
+
+export type ImageProjectStatus =
+  | "idea"
+  | "prompt_ready"
+  | "generating"
+  | "review"
+  | "approved"
+  | "published"
+  | "rejected";
+
 export type LiveStreamType =
   | "work_with_me"
   | "chat"
@@ -117,9 +135,33 @@ export type ContentItem = {
   updatedAt: string;
 };
 
+export type ImageProject = {
+  id: string;
+  notionPageId?: string;
+  userId?: string;
+  themeId?: string;
+  themeTitle?: string;
+  contentItemId?: string;
+  contentTitle?: string;
+  platform: Platform;
+  imageType: ImageProjectType;
+  title: string;
+  status: ImageProjectStatus;
+  format: string;
+  prompt: string;
+  negativePrompt?: string;
+  referenceUrl?: string;
+  outputUrl?: string;
+  memo?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ThemeInput = Omit<Theme, "id" | "notionPageId" | "createdAt" | "updatedAt">;
 
 export type ContentItemInput = Omit<ContentItem, "id" | "notionPageId" | "createdAt" | "updatedAt">;
+
+export type ImageProjectInput = Omit<ImageProject, "id" | "notionPageId" | "createdAt" | "updatedAt">;
 
 export type SelectOption<T extends string> = {
   value: T;
@@ -174,6 +216,34 @@ export const contentStatusOptions: SelectOption<ContentStatus>[] = [
   { value: "scheduled", label: "予約済み", notionLabel: "Scheduled" },
   { value: "published", label: "投稿済み", notionLabel: "Published" },
   { value: "analyzed", label: "分析済み", notionLabel: "Analyzed" },
+  { value: "rejected", label: "ボツ", notionLabel: "Rejected" }
+];
+
+export const imageProjectTypeOptions: SelectOption<ImageProjectType>[] = [
+  {
+    value: "instagram_carousel_design",
+    label: "Instagramカルーセル画像",
+    notionLabel: "Instagram Carousel Design"
+  },
+  { value: "instagram_reel_cover", label: "Instagramリール表紙", notionLabel: "Instagram Reel Cover" },
+  { value: "youtube_thumbnail", label: "YouTubeサムネ", notionLabel: "YouTube Thumbnail" },
+  {
+    value: "youtube_live_thumbnail",
+    label: "YouTubeライブサムネ",
+    notionLabel: "YouTube Live Thumbnail"
+  },
+  { value: "note_eyecatch", label: "noteアイキャッチ", notionLabel: "note Eyecatch" },
+  { value: "threads_image", label: "Threads画像", notionLabel: "Threads Image" },
+  { value: "x_image", label: "X画像", notionLabel: "X Image" }
+];
+
+export const imageProjectStatusOptions: SelectOption<ImageProjectStatus>[] = [
+  { value: "idea", label: "アイデア", notionLabel: "Idea" },
+  { value: "prompt_ready", label: "プロンプト準備済み", notionLabel: "Prompt Ready" },
+  { value: "generating", label: "生成中", notionLabel: "Generating" },
+  { value: "review", label: "確認待ち", notionLabel: "Review" },
+  { value: "approved", label: "採用", notionLabel: "Approved" },
+  { value: "published", label: "投稿済み", notionLabel: "Published" },
   { value: "rejected", label: "ボツ", notionLabel: "Rejected" }
 ];
 

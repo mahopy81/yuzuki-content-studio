@@ -9,9 +9,24 @@ import {
   listContentItems,
   updateContentItem
 } from "@/services/notion/contentItems";
+import {
+  createImageProject,
+  deleteImageProject,
+  listImageProjects,
+  updateImageProject
+} from "@/services/notion/imageProjects";
 import { generatedContentToText, generateMockContentSet } from "@/services/ai/mockContent";
 import { createTheme, deleteTheme, listThemes, updateTheme } from "@/services/notion/themes";
-import type { ContentItem, ContentItemInput, ContentStatus, Theme, ThemeInput } from "@/types/content";
+import type {
+  ContentItem,
+  ContentItemInput,
+  ContentStatus,
+  ImageProject,
+  ImageProjectInput,
+  ImageProjectType,
+  Theme,
+  ThemeInput
+} from "@/types/content";
 
 type ActionResult<T> = {
   ok: boolean;
@@ -43,17 +58,19 @@ export async function signOut() {
 }
 
 export async function getDashboardData(): Promise<
-  ActionResult<{ themes: Theme[]; contentItems: ContentItem[] }>
+  ActionResult<{ themes: Theme[]; contentItems: ContentItem[]; imageProjects: ImageProject[] }>
 > {
   try {
     await getUserId();
     const [themes, contentItems] = await Promise.all([listThemes(), listContentItems()]);
+    const imageProjects = await listImageProjects().catch(() => []);
 
     return {
       ok: true,
       data: {
         themes,
-        contentItems
+        contentItems,
+        imageProjects
       }
     };
   } catch (error) {
@@ -61,7 +78,8 @@ export async function getDashboardData(): Promise<
       ok: false,
       data: {
         themes: [],
-        contentItems: []
+        contentItems: [],
+        imageProjects: []
       },
       error: errorMessage(error)
     };
@@ -147,6 +165,130 @@ export async function deleteContentItemAction(id: string): Promise<ActionResult<
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
+}
+
+export async function saveImageProjectAction(
+  input: ImageProjectInput
+): Promise<ActionResult<ImageProject>> {
+  try {
+    const userId = await getUserId();
+    const imageProject = await createImageProject({ ...input, userId });
+    revalidatePath("/dashboard");
+    return { ok: true, data: imageProject };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function updateImageProjectAction(
+  id: string,
+  input: Partial<ImageProjectInput>
+): Promise<ActionResult<ImageProject>> {
+  try {
+    const userId = await getUserId();
+    const imageProject = await updateImageProject(id, { ...input, userId });
+    revalidatePath("/dashboard");
+    return { ok: true, data: imageProject };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function deleteImageProjectAction(id: string): Promise<ActionResult<{ id: string }>> {
+  try {
+    await getUserId();
+    await deleteImageProject(id);
+    revalidatePath("/dashboard");
+    return { ok: true, data: { id } };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+function imageTypeForContent(contentItem: ContentItem): ImageProjectType {
+  if (contentItem.contentType === "youtube_live_plan") {
+    return "youtube_live_thumbnail";
+  }
+
+  if (contentItem.platform === "youtube") {
+    return "youtube_thumbnail";
+  }
+
+  if (contentItem.contentType === "instagram_reel_script") {
+    return "instagram_reel_cover";
+  }
+
+  if (contentItem.platform === "note") {
+    return "note_eyecatch";
+  }
+
+  if (contentItem.platform === "threads") {
+    return "threads_image";
+  }
+
+  if (contentItem.platform === "x") {
+    return "x_image";
+  }
+
+  return "instagram_carousel_design";
+}
+
+function formatForImageType(imageType: ImageProjectType) {
+  if (imageType === "youtube_thumbnail" || imageType === "youtube_live_thumbnail") {
+    return "16:9 / 1280x720";
+  }
+
+  if (imageType === "instagram_reel_cover") {
+    return "9:16 / 1080x1920";
+  }
+
+  if (imageType === "x_image") {
+    return "16:9";
+  }
+
+  return "1:1 / 1080x1080";
+}
+
+function buildImagePrompt(contentItem: ContentItem, theme?: Theme) {
+  const themeText = theme?.mainTheme || contentItem.title;
+  const target = theme?.targetAudience || "発信を見ている読者";
+  const cta = contentItem.cta || theme?.cta || "";
+
+  return [
+    `目的: ${contentItem.title}に使うSNS画像を作る。`,
+    `テーマ: ${themeText}`,
+    `届けたい相手: ${target}`,
+    "雰囲気: やさしく信頼感があり、上品で読みやすい。余白を広めに取る。",
+    "構図: メインコピーが中央で読みやすく、背景は情報を邪魔しない。",
+    cta ? `CTA: ${cta}` : "",
+    "注意: 小さな文字を詰め込みすぎず、スマホ画面で一瞬で意味が伝わる画像にする。"
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function createImageProjectFromContentAction(
+  contentItem: ContentItem,
+  theme?: Theme
+): Promise<ActionResult<ImageProject>> {
+  const imageType = imageTypeForContent(contentItem);
+
+  return saveImageProjectAction({
+    themeId: theme?.id ?? contentItem.themeId,
+    themeTitle: theme?.mainTheme ?? "",
+    contentItemId: contentItem.id,
+    contentTitle: contentItem.title,
+    platform: contentItem.platform,
+    imageType,
+    title: `${contentItem.title} 画像案`,
+    status: "prompt_ready",
+    format: formatForImageType(imageType),
+    prompt: buildImagePrompt(contentItem, theme),
+    negativePrompt: "文字が多すぎる、読みにくい、暗すぎる、過度な装飾、低解像度、実在ブランドのロゴ",
+    referenceUrl: "",
+    outputUrl: "",
+    memo: "Phase 4で投稿から作成"
+  });
 }
 
 export async function createSampleDataAction(): Promise<
