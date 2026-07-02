@@ -10,7 +10,7 @@ import {
   updateContentItem
 } from "@/services/notion/contentItems";
 import { generatedContentToText, generateMockContentSet } from "@/services/ai/mockContent";
-import { createTheme, deleteTheme, getTheme, listThemes, updateTheme } from "@/services/notion/themes";
+import { createTheme, deleteTheme, listThemes, updateTheme } from "@/services/notion/themes";
 import type { ContentItem, ContentItemInput, ContentStatus, Theme, ThemeInput } from "@/types/content";
 
 type ActionResult<T> = {
@@ -210,11 +210,10 @@ export async function createSampleDataAction(): Promise<
 }
 
 export async function generateContentSetAction(
-  themeId: string
+  theme: Theme
 ): Promise<ActionResult<{ contentItems: ContentItem[] }>> {
   try {
     const userId = await getUserId();
-    const theme = await getTheme(themeId);
     const generated = generateMockContentSet({ theme });
     const base = {
       userId,

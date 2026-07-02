@@ -439,7 +439,7 @@ export function DashboardClient({
   function generateContentSet(theme: Theme) {
     setGeneratingThemeId(theme.id);
     startTransition(async () => {
-      const result = await generateContentSetAction(theme.id);
+      const result = await generateContentSetAction(theme);
       setGeneratingThemeId(null);
 
       const generatedData = result.data;
