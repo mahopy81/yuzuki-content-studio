@@ -95,24 +95,20 @@ Statusは `Idea`, `Generated`, `Drafting`, `Review`, `Revision`, `Scheduled`, `P
 | 名前 | 種類 |
 | --- | --- |
 | Name | title |
-| Theme ID | rich_text |
-| Theme Title | rich_text |
-| Content Item ID | rich_text |
-| Content Title | rich_text |
-| Platform | select |
-| Image Type | select |
-| Status | select |
-| Format | rich_text |
-| Prompt | rich_text |
-| Negative Prompt | rich_text |
-| Reference URL | rich_text |
-| Output URL | rich_text |
+| Theme | relation |
+| Content Item | relation |
+| Image Platform | select |
+| Width | number |
+| Height | number |
+| Max Slides | number |
+| Project JSON | rich_text |
+| Exported Files | url |
 | Memo | rich_text |
 | Created At | date |
 | Updated At | date |
 
-Image Typeは `Instagram Carousel Design`, `Instagram Reel Cover`, `YouTube Thumbnail`, `YouTube Live Thumbnail`, `note Eyecatch`, `Threads Image`, `X Image` を用意します。
-Statusは `Idea`, `Prompt Ready`, `Generating`, `Review`, `Approved`, `Published`, `Rejected` を用意します。
+Image Platformは `Instagram Carousel`, `Threads Images`, `X Images` を用意します。
+アプリで使う `Status`, `Prompt`, `Image Type`, `Negative Prompt`, `Reference URL` などの細かい情報は、`Project JSON` にまとめて保存します。
 
 ## 7. DB IDを取得する
 

@@ -50,6 +50,18 @@ export function dateProperty(value?: string) {
     : { date: null };
 }
 
+export function numberProperty(value?: number) {
+  return {
+    number: typeof value === "number" && Number.isFinite(value) ? value : null
+  };
+}
+
+export function urlProperty(value?: string) {
+  return {
+    url: value || null
+  };
+}
+
 export function multiSelectProperty(values?: string[]) {
   return {
     multi_select: (values ?? []).filter(Boolean).map((value) => ({ name: value }))
@@ -110,6 +122,26 @@ export function readDate(properties: unknown, key: string) {
   }
 
   return (property as { date?: { start?: string } | null }).date?.start;
+}
+
+export function readNumber(properties: unknown, key: string) {
+  const property = getProperty(properties, key);
+
+  if (!property || typeof property !== "object" || !("number" in property)) {
+    return undefined;
+  }
+
+  return (property as { number?: number | null }).number ?? undefined;
+}
+
+export function readUrl(properties: unknown, key: string) {
+  const property = getProperty(properties, key);
+
+  if (!property || typeof property !== "object" || !("url" in property)) {
+    return "";
+  }
+
+  return (property as { url?: string | null }).url ?? "";
 }
 
 export function readMultiSelect(properties: unknown, key: string) {
