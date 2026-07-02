@@ -30,6 +30,50 @@ export type ContentType =
   | "threads_post"
   | "x_post";
 
+export type LiveStreamType =
+  | "work_with_me"
+  | "chat"
+  | "ai_explainer"
+  | "freelance_consulting"
+  | "study"
+  | "vtuber_project"
+  | "qa"
+  | "roadmap";
+
+export type YouTubeLiveSection = {
+  title: string;
+  estimatedMinutes: number;
+  talkingPoints: string[];
+  script: string;
+};
+
+export type YouTubeLivePlan = {
+  title: string;
+  liveStreamType: LiveStreamType;
+  thumbnailText: string;
+  theme: string;
+  purpose: string;
+  targetAudience: string;
+  scheduledDate?: string;
+  startTime?: string;
+  estimatedDurationMinutes: number;
+  openingGreeting: string;
+  openingHook: string;
+  outline: string[];
+  sections: YouTubeLiveSection[];
+  chatTopics: string[];
+  commentPickupPoints: string[];
+  questionsForViewers: string[];
+  interactiveIdeas: string[];
+  workContent?: string;
+  explanationItems?: string[];
+  announcement: string;
+  cta: string;
+  endingScript: string;
+  clipIdeas: string[];
+  repurposeIdeas: string[];
+};
+
 export type Theme = {
   id: string;
   notionPageId?: string;
@@ -131,6 +175,17 @@ export const contentStatusOptions: SelectOption<ContentStatus>[] = [
   { value: "published", label: "投稿済み", notionLabel: "Published" },
   { value: "analyzed", label: "分析済み", notionLabel: "Analyzed" },
   { value: "rejected", label: "ボツ", notionLabel: "Rejected" }
+];
+
+export const liveStreamTypeOptions: SelectOption<LiveStreamType>[] = [
+  { value: "work_with_me", label: "作業配信", notionLabel: "Work With Me" },
+  { value: "chat", label: "雑談配信", notionLabel: "Chat" },
+  { value: "ai_explainer", label: "AI解説配信", notionLabel: "AI Explainer" },
+  { value: "freelance_consulting", label: "フリーランス相談配信", notionLabel: "Freelance Consulting" },
+  { value: "study", label: "勉強配信", notionLabel: "Study" },
+  { value: "vtuber_project", label: "Vtuber企画配信", notionLabel: "Vtuber Project" },
+  { value: "qa", label: "Q&A配信", notionLabel: "Q&A" },
+  { value: "roadmap", label: "ロードマップ解説配信", notionLabel: "Roadmap" }
 ];
 
 export function labelFor<T extends string>(options: SelectOption<T>[], value: T) {

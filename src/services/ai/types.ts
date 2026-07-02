@@ -1,4 +1,4 @@
-import type { Theme } from "@/types/content";
+import type { LiveStreamType, Theme } from "@/types/content";
 
 export type SlideTemplateType =
   | "cover"
@@ -11,16 +11,6 @@ export type SlideTemplateType =
   | "mistake"
   | "summary"
   | "cta";
-
-export type LiveStreamType =
-  | "work_with_me"
-  | "chat"
-  | "ai_explainer"
-  | "freelance_consulting"
-  | "study"
-  | "vtuber_project"
-  | "qa"
-  | "roadmap";
 
 export type GeneratedContentSet = {
   themeId: string;

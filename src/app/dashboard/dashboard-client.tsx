@@ -16,6 +16,7 @@ import {
   contentStatusOptions,
   contentTypeOptions,
   labelFor,
+  liveStreamTypeOptions,
   platformOptions,
   purposeOptions,
   themeStatusOptions,
@@ -23,10 +24,13 @@ import {
   type ContentItemInput,
   type ContentStatus,
   type ContentType,
+  type LiveStreamType,
   type Platform,
   type Theme,
   type ThemeInput,
-  type ThemeStatus
+  type ThemeStatus,
+  type YouTubeLivePlan,
+  type YouTubeLiveSection
 } from "@/types/content";
 
 type DashboardClientProps = {
@@ -93,6 +97,136 @@ function normalizeTags(value: string) {
 
 function tagsToText(tags?: string[]) {
   return (tags ?? []).join(", ");
+}
+
+function linesToArray(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function arrayToLines(value?: string[]) {
+  return (value ?? []).join("\n");
+}
+
+function toPrettyJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function asLiveSection(value: unknown): YouTubeLiveSection | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const section = value as Partial<YouTubeLiveSection>;
+
+  return {
+    title: typeof section.title === "string" ? section.title : "",
+    estimatedMinutes:
+      typeof section.estimatedMinutes === "number" && Number.isFinite(section.estimatedMinutes)
+        ? section.estimatedMinutes
+        : 10,
+    talkingPoints: asStringArray(section.talkingPoints),
+    script: typeof section.script === "string" ? section.script : ""
+  };
+}
+
+function defaultLiveSections(): YouTubeLiveSection[] {
+  return [
+    {
+      title: "導入",
+      estimatedMinutes: 10,
+      talkingPoints: ["今日のテーマ", "視聴者に得てほしいこと"],
+      script: ""
+    },
+    {
+      title: "本編",
+      estimatedMinutes: 30,
+      talkingPoints: ["悩みの整理", "解決の流れ", "具体例"],
+      script: ""
+    }
+  ];
+}
+
+function buildDefaultLivePlan(form: ContentItemInput, theme?: Theme): YouTubeLivePlan {
+  const title = form.title || `${theme?.mainTheme ?? "今週のテーマ"} ライブ配信`;
+
+  return {
+    title,
+    liveStreamType: "work_with_me",
+    thumbnailText: "",
+    theme: theme?.mainTheme ?? "",
+    purpose: theme?.purpose ?? "",
+    targetAudience: theme?.targetAudience ?? "",
+    scheduledDate: form.scheduledDate,
+    startTime: "",
+    estimatedDurationMinutes: 60,
+    openingGreeting: "",
+    openingHook: "",
+    outline: [],
+    sections: defaultLiveSections(),
+    chatTopics: [],
+    commentPickupPoints: [],
+    questionsForViewers: [],
+    interactiveIdeas: [],
+    workContent: "",
+    explanationItems: [],
+    announcement: "",
+    cta: form.cta ?? theme?.cta ?? "",
+    endingScript: "",
+    clipIdeas: [],
+    repurposeIdeas: []
+  };
+}
+
+function parseLivePlan(form: ContentItemInput, theme?: Theme): YouTubeLivePlan {
+  const fallback = buildDefaultLivePlan(form, theme);
+
+  if (!form.script?.trim()) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(form.script) as Partial<YouTubeLivePlan>;
+    const sections = Array.isArray(parsed.sections)
+      ? parsed.sections
+          .map(asLiveSection)
+          .filter((section): section is YouTubeLiveSection => Boolean(section))
+      : fallback.sections;
+
+    return {
+      ...fallback,
+      ...parsed,
+      title: typeof parsed.title === "string" ? parsed.title : fallback.title,
+      liveStreamType: liveStreamTypeOptions.some((option) => option.value === parsed.liveStreamType)
+        ? (parsed.liveStreamType as LiveStreamType)
+        : fallback.liveStreamType,
+      estimatedDurationMinutes:
+        typeof parsed.estimatedDurationMinutes === "number" &&
+        Number.isFinite(parsed.estimatedDurationMinutes)
+          ? parsed.estimatedDurationMinutes
+          : fallback.estimatedDurationMinutes,
+      outline: asStringArray(parsed.outline),
+      sections: sections.length > 0 ? sections : fallback.sections,
+      chatTopics: asStringArray(parsed.chatTopics),
+      commentPickupPoints: asStringArray(parsed.commentPickupPoints),
+      questionsForViewers: asStringArray(parsed.questionsForViewers),
+      interactiveIdeas: asStringArray(parsed.interactiveIdeas),
+      explanationItems: asStringArray(parsed.explanationItems),
+      clipIdeas: asStringArray(parsed.clipIdeas),
+      repurposeIdeas: asStringArray(parsed.repurposeIdeas)
+    };
+  } catch {
+    return {
+      ...fallback,
+      openingHook: form.script
+    };
+  }
 }
 
 function readBackup() {
@@ -171,6 +305,29 @@ export function DashboardClient({
       count: contentItems.filter((item) => item.platform === platform.value).length
     }));
   }, [contentItems]);
+
+  const selectedContentTheme = themes.find(
+    (theme) => theme.id === (contentForm.themeId || themes[0]?.id || "")
+  );
+
+  const livePlan = useMemo(
+    () => parseLivePlan(contentForm, selectedContentTheme),
+    [contentForm, selectedContentTheme]
+  );
+
+  function updateContentForm(input: Partial<ContentItemInput>) {
+    setContentForm((form) => ({ ...form, ...input }));
+  }
+
+  function updateLivePlan(input: YouTubeLivePlan) {
+    setContentForm((form) => ({
+      ...form,
+      title: input.title,
+      scheduledDate: input.scheduledDate ?? "",
+      cta: input.cta,
+      script: toPrettyJson(input)
+    }));
+  }
 
   function selectTheme(theme: Theme) {
     setEditingThemeId(theme.id);
@@ -458,12 +615,12 @@ export function DashboardClient({
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 rounded-lg border border-white/70 bg-white/68 p-6 shadow-soft backdrop-blur md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-medium text-champagne">Phase 2</p>
+          <p className="text-sm font-medium text-champagne">Phase 3</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-ink">
             Yuzuki Content Studio
           </h1>
           <p className="mt-2 text-sm leading-6 text-stone-600">
-            テーマから各媒体のコンテンツ案を一括生成し、Notionに保存できるMVPです。
+            各媒体の投稿案を編集し、ステータスやメモと一緒にNotionへ保存できます。
           </p>
         </div>
         <div className="flex flex-col gap-2 text-sm text-stone-600 md:items-end">
@@ -703,7 +860,14 @@ export function DashboardClient({
           <TextField
             label="タイトル"
             value={contentForm.title}
-            onChange={(value) => setContentForm((form) => ({ ...form, title: value }))}
+            onChange={(value) => {
+              if (contentForm.contentType === "youtube_live_plan") {
+                updateLivePlan({ ...livePlan, title: value });
+                return;
+              }
+
+              updateContentForm({ title: value });
+            }}
           />
           <SelectField
             label="ステータス"
@@ -717,46 +881,55 @@ export function DashboardClient({
             label="投稿予定日"
             type="date"
             value={contentForm.scheduledDate ?? ""}
-            onChange={(value) => setContentForm((form) => ({ ...form, scheduledDate: value }))}
+            onChange={(value) => {
+              if (contentForm.contentType === "youtube_live_plan") {
+                updateLivePlan({ ...livePlan, scheduledDate: value });
+                return;
+              }
+
+              updateContentForm({ scheduledDate: value });
+            }}
           />
-          <TextAreaField
-            label="本文"
-            value={contentForm.body ?? ""}
-            onChange={(value) => setContentForm((form) => ({ ...form, body: value }))}
-          />
-          <TextAreaField
-            label="キャプション"
-            value={contentForm.caption ?? ""}
-            onChange={(value) => setContentForm((form) => ({ ...form, caption: value }))}
-          />
-          <TextAreaField
-            label="台本"
-            value={contentForm.script ?? ""}
-            onChange={(value) => setContentForm((form) => ({ ...form, script: value }))}
-          />
-          <TextAreaField
-            label="記事"
-            value={contentForm.article ?? ""}
-            onChange={(value) => setContentForm((form) => ({ ...form, article: value }))}
+        </div>
+
+        {editingContentId ? (
+          <div className="mt-4 rounded-md border border-champagne/50 bg-rose/70 px-4 py-3 text-sm text-ink">
+            編集中: {contentForm.title || "無題"} /{" "}
+            {labelFor(contentTypeOptions, contentForm.contentType)}
+          </div>
+        ) : null}
+
+        <ContentEditorFields
+          form={contentForm}
+          livePlan={livePlan}
+          onChange={updateContentForm}
+          onChangeLivePlan={updateLivePlan}
+        />
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <TextField
+            label="CTA"
+            value={contentForm.cta ?? ""}
+            onChange={(value) => {
+              if (contentForm.contentType === "youtube_live_plan") {
+                updateLivePlan({ ...livePlan, cta: value });
+                return;
+              }
+
+              updateContentForm({ cta: value });
+            }}
           />
           <TextField
             label="ハッシュタグ"
             value={tagsToText(contentForm.hashtags)}
             placeholder="AI副業, 初心者, 発信"
-            onChange={(value) =>
-              setContentForm((form) => ({ ...form, hashtags: normalizeTags(value) }))
-            }
-          />
-          <TextField
-            label="CTA"
-            value={contentForm.cta ?? ""}
-            onChange={(value) => setContentForm((form) => ({ ...form, cta: value }))}
+            onChange={(value) => updateContentForm({ hashtags: normalizeTags(value) })}
           />
           <div className="md:col-span-3">
             <TextAreaField
               label="メモ"
               value={contentForm.memo ?? ""}
-              onChange={(value) => setContentForm((form) => ({ ...form, memo: value }))}
+              onChange={(value) => updateContentForm({ memo: value })}
             />
           </div>
         </div>
@@ -862,6 +1035,387 @@ export function DashboardClient({
   );
 }
 
+function ContentEditorFields({
+  form,
+  livePlan,
+  onChange,
+  onChangeLivePlan
+}: {
+  form: ContentItemInput;
+  livePlan: YouTubeLivePlan;
+  onChange: (input: Partial<ContentItemInput>) => void;
+  onChangeLivePlan: (input: YouTubeLivePlan) => void;
+}) {
+  if (form.contentType === "youtube_live_plan") {
+    return <YouTubeLiveEditor plan={livePlan} onChange={onChangeLivePlan} />;
+  }
+
+  if (form.contentType === "instagram_caption") {
+    return (
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <TextAreaField
+          label="キャプション本文"
+          value={form.caption ?? ""}
+          rows={8}
+          onChange={(value) => onChange({ caption: value })}
+        />
+        <TextAreaField
+          label="投稿メモ・補足"
+          value={form.body ?? ""}
+          rows={8}
+          onChange={(value) => onChange({ body: value })}
+        />
+      </div>
+    );
+  }
+
+  if (form.contentType === "instagram_reel_script") {
+    return (
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <TextAreaField
+          label="リール台本"
+          value={form.script ?? ""}
+          rows={10}
+          onChange={(value) => onChange({ script: value })}
+        />
+        <TextAreaField
+          label="画面メモ・テロップ案"
+          value={form.body ?? ""}
+          rows={10}
+          onChange={(value) => onChange({ body: value })}
+        />
+      </div>
+    );
+  }
+
+  if (form.contentType === "youtube_script") {
+    return (
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <TextAreaField
+          label="YouTube台本"
+          value={form.script ?? ""}
+          rows={12}
+          onChange={(value) => onChange({ script: value })}
+        />
+        <TextAreaField
+          label="概要欄・補足"
+          value={form.body ?? ""}
+          rows={12}
+          onChange={(value) => onChange({ body: value })}
+        />
+      </div>
+    );
+  }
+
+  if (form.contentType === "note_article") {
+    return (
+      <div className="mt-4">
+        <TextAreaField
+          label="note記事本文"
+          value={form.article ?? ""}
+          rows={14}
+          onChange={(value) => onChange({ article: value })}
+        />
+      </div>
+    );
+  }
+
+  if (form.contentType === "threads_post" || form.contentType === "x_post") {
+    return (
+      <div className="mt-4">
+        <TextAreaField
+          label={form.contentType === "threads_post" ? "Threads投稿案" : "X投稿案"}
+          value={form.body ?? ""}
+          rows={10}
+          onChange={(value) => onChange({ body: value })}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4">
+      <TextAreaField
+        label="本文・構成案"
+        value={form.body ?? ""}
+        rows={10}
+        onChange={(value) => onChange({ body: value })}
+      />
+    </div>
+  );
+}
+
+function YouTubeLiveEditor({
+  plan,
+  onChange
+}: {
+  plan: YouTubeLivePlan;
+  onChange: (input: YouTubeLivePlan) => void;
+}) {
+  const update = (input: Partial<YouTubeLivePlan>) => onChange({ ...plan, ...input });
+  const updateStringList = (key: keyof YouTubeLivePlan, value: string) =>
+    update({ [key]: linesToArray(value) } as Partial<YouTubeLivePlan>);
+  const updateSection = (index: number, input: Partial<YouTubeLiveSection>) => {
+    const sections = plan.sections.map((section, sectionIndex) =>
+      sectionIndex === index ? { ...section, ...input } : section
+    );
+    onChange({ ...plan, sections });
+  };
+  const addSection = () => {
+    onChange({
+      ...plan,
+      sections: [
+        ...plan.sections,
+        {
+          title: "新しいセクション",
+          estimatedMinutes: 10,
+          talkingPoints: [],
+          script: ""
+        }
+      ]
+    });
+  };
+  const removeSection = (index: number) => {
+    if (plan.sections.length <= 1) {
+      return;
+    }
+
+    onChange({
+      ...plan,
+      sections: plan.sections.filter((_, sectionIndex) => sectionIndex !== index)
+    });
+  };
+
+  return (
+    <div className="mt-4 space-y-5">
+      <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+        <h3 className="text-base font-semibold text-ink">YouTubeライブ企画</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <TextField
+            label="ライブタイトル"
+            value={plan.title}
+            onChange={(value) => update({ title: value })}
+          />
+          <TextField
+            label="サムネ文言"
+            value={plan.thumbnailText}
+            onChange={(value) => update({ thumbnailText: value })}
+          />
+          <SelectField
+            label="配信タイプ"
+            value={plan.liveStreamType}
+            options={liveStreamTypeOptions}
+            onChange={(value) => update({ liveStreamType: value as LiveStreamType })}
+          />
+          <TextField
+            label="テーマ"
+            value={plan.theme}
+            onChange={(value) => update({ theme: value })}
+          />
+          <TextField
+            label="目的"
+            value={plan.purpose}
+            onChange={(value) => update({ purpose: value })}
+          />
+          <TextField
+            label="ターゲット"
+            value={plan.targetAudience}
+            onChange={(value) => update({ targetAudience: value })}
+          />
+          <TextField
+            label="配信予定日"
+            type="date"
+            value={plan.scheduledDate ?? ""}
+            onChange={(value) => update({ scheduledDate: value })}
+          />
+          <TextField
+            label="開始時間"
+            type="time"
+            value={plan.startTime ?? ""}
+            onChange={(value) => update({ startTime: value })}
+          />
+          <TextField
+            label="予定時間（分）"
+            type="number"
+            value={plan.estimatedDurationMinutes.toString()}
+            onChange={(value) => update({ estimatedDurationMinutes: Number(value) || 0 })}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+          <h3 className="text-base font-semibold text-ink">冒頭</h3>
+          <div className="mt-3 space-y-3">
+            <TextAreaField
+              label="あいさつ"
+              value={plan.openingGreeting}
+              rows={4}
+              onChange={(value) => update({ openingGreeting: value })}
+            />
+            <TextAreaField
+              label="冒頭フック"
+              value={plan.openingHook}
+              rows={4}
+              onChange={(value) => update({ openingHook: value })}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+          <h3 className="text-base font-semibold text-ink">全体構成</h3>
+          <div className="mt-3">
+            <TextAreaField
+              label="アウトライン（1行に1つ）"
+              value={arrayToLines(plan.outline)}
+              rows={9}
+              onChange={(value) => updateStringList("outline", value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <h3 className="text-base font-semibold text-ink">本編セクション</h3>
+          <button
+            type="button"
+            onClick={addSection}
+            className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+          >
+            セクション追加
+          </button>
+        </div>
+        <div className="mt-3 space-y-4">
+          {plan.sections.map((section, index) => (
+            <div key={`${section.title}-${index}`} className="rounded-md border border-stone-100 bg-white/80 p-3">
+              <div className="grid gap-3 md:grid-cols-[1fr_140px_auto] md:items-end">
+                <TextField
+                  label={`セクション${index + 1} タイトル`}
+                  value={section.title}
+                  onChange={(value) => updateSection(index, { title: value })}
+                />
+                <TextField
+                  label="目安分数"
+                  type="number"
+                  value={section.estimatedMinutes.toString()}
+                  onChange={(value) => updateSection(index, { estimatedMinutes: Number(value) || 0 })}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSection(index)}
+                  className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 disabled:opacity-50"
+                  disabled={plan.sections.length <= 1}
+                >
+                  削除
+                </button>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <TextAreaField
+                  label="話すポイント（1行に1つ）"
+                  value={arrayToLines(section.talkingPoints)}
+                  rows={5}
+                  onChange={(value) => updateSection(index, { talkingPoints: linesToArray(value) })}
+                />
+                <TextAreaField
+                  label="台本"
+                  value={section.script}
+                  rows={5}
+                  onChange={(value) => updateSection(index, { script: value })}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <TextAreaGroup
+          title="視聴者とのやりとり"
+          fields={[
+            {
+              label: "チャット話題（1行に1つ）",
+              value: arrayToLines(plan.chatTopics),
+              onChange: (value) => updateStringList("chatTopics", value)
+            },
+            {
+              label: "拾いたいコメント（1行に1つ）",
+              value: arrayToLines(plan.commentPickupPoints),
+              onChange: (value) => updateStringList("commentPickupPoints", value)
+            },
+            {
+              label: "視聴者への質問（1行に1つ）",
+              value: arrayToLines(plan.questionsForViewers),
+              onChange: (value) => updateStringList("questionsForViewers", value)
+            },
+            {
+              label: "参加型アイデア（1行に1つ）",
+              value: arrayToLines(plan.interactiveIdeas),
+              onChange: (value) => updateStringList("interactiveIdeas", value)
+            }
+          ]}
+        />
+
+        <TextAreaGroup
+          title="締めと二次活用"
+          fields={[
+            {
+              label: "告知",
+              value: plan.announcement,
+              onChange: (value) => update({ announcement: value })
+            },
+            {
+              label: "CTA",
+              value: plan.cta,
+              onChange: (value) => update({ cta: value })
+            },
+            {
+              label: "締めの台本",
+              value: plan.endingScript,
+              onChange: (value) => update({ endingScript: value })
+            },
+            {
+              label: "切り抜き案（1行に1つ）",
+              value: arrayToLines(plan.clipIdeas),
+              onChange: (value) => updateStringList("clipIdeas", value)
+            },
+            {
+              label: "再利用案（1行に1つ）",
+              value: arrayToLines(plan.repurposeIdeas),
+              onChange: (value) => updateStringList("repurposeIdeas", value)
+            }
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TextAreaGroup({
+  title,
+  fields
+}: {
+  title: string;
+  fields: { label: string; value: string; onChange: (value: string) => void }[];
+}) {
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+      <h3 className="text-base font-semibold text-ink">{title}</h3>
+      <div className="mt-3 space-y-3">
+        {fields.map((field) => (
+          <TextAreaField
+            key={field.label}
+            label={field.label}
+            value={field.value}
+            rows={4}
+            onChange={field.onChange}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-h-28 rounded-lg border border-white/70 bg-white/68 p-4 backdrop-blur">
@@ -937,11 +1491,13 @@ function TextField({
 function TextAreaField({
   label,
   value,
-  onChange
+  onChange,
+  rows = 4
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  rows?: number;
 }) {
   return (
     <label className="block text-sm">
@@ -949,7 +1505,7 @@ function TextAreaField({
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        rows={4}
+        rows={rows}
         className="mt-2 w-full resize-y rounded-md border border-stone-200 bg-white/85 px-3 py-2 leading-6 outline-none transition focus:border-champagne"
       />
     </label>
