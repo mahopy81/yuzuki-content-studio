@@ -72,6 +72,7 @@ type DashboardSection =
   | "themes"
   | "content"
   | "images"
+  | "lives"
   | "calendar"
   | "status";
 
@@ -92,6 +93,7 @@ const navItems: { value: DashboardSection; label: string; description: string }[
   { value: "themes", label: "テーマ管理", description: "週テーマ" },
   { value: "content", label: "投稿作成", description: "本文・台本" },
   { value: "images", label: "画像エディタ", description: "カルーセル" },
+  { value: "lives", label: "ライブ配信", description: "週2本管理" },
   { value: "calendar", label: "カレンダー", description: "投稿予定" },
   { value: "status", label: "投稿管理", description: "一覧・状態" }
 ];
@@ -657,6 +659,45 @@ function downloadSlideAsPng(slide: Slide, preset = outputPresets[0]) {
   image.src = svgUrl;
 }
 
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+async function downloadSlidesAsPng(slides: Slide[], preset = outputPresets[0]) {
+  for (const slide of slides) {
+    downloadSlideAsPng(slide, preset);
+    await sleep(250);
+  }
+}
+
+function contentItemToInput(item: ContentItem): ContentItemInput {
+  return {
+    userId: item.userId,
+    themeId: item.themeId,
+    themeNotionPageId: item.themeNotionPageId,
+    platform: item.platform,
+    contentType: item.contentType,
+    title: item.title,
+    status: item.status,
+    scheduledDate: item.scheduledDate ?? "",
+    publishedDate: item.publishedDate ?? "",
+    cta: item.cta ?? "",
+    body: item.body ?? "",
+    caption: item.caption ?? "",
+    script: item.script ?? "",
+    article: item.article ?? "",
+    hashtags: item.hashtags ?? [],
+    imageProjectId: item.imageProjectId ?? "",
+    memo: item.memo ?? ""
+  };
+}
+
+function parseLivePlanFromItem(item: ContentItem, theme?: Theme) {
+  return parseLivePlan(contentItemToInput(item), theme);
+}
+
 function readBackup() {
   if (typeof window === "undefined") {
     return undefined;
@@ -701,6 +742,8 @@ export function DashboardClient({
   const [generatingThemeId, setGeneratingThemeId] = useState<string | null>(null);
   const [scheduleMonth, setScheduleMonth] = useState(() => formatMonthInput(new Date()));
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
+  const [liveTypeFilter, setLiveTypeFilter] = useState<LiveStreamType | "all">("all");
+  const [selectedLiveThemeId, setSelectedLiveThemeId] = useState("");
   const [notice, setNotice] = useState(
     backup
       ? "Notionから読み込めなかったため、ブラウザ内のバックアップを表示しています。"
@@ -719,6 +762,9 @@ export function DashboardClient({
   }, [contentItems, imageProjects, themes]);
 
   const currentWeekTheme = themes.find((theme) => theme.status === "active") ?? themes[0];
+  const selectedLiveTheme =
+    themes.find((theme) => theme.id === (selectedLiveThemeId || currentWeekTheme?.id)) ??
+    currentWeekTheme;
 
   const summary = useMemo(() => {
     const countByStatus = (status: ContentStatus) =>
@@ -764,6 +810,20 @@ export function DashboardClient({
       .filter((item) => !item.scheduledDate && item.status !== "published" && item.status !== "analyzed")
       .slice(0, 8);
   }, [contentItems]);
+
+  const liveItems = useMemo(() => {
+    return contentItems
+      .filter((item) => item.contentType === "youtube_live_plan")
+      .filter((item) => {
+        if (liveTypeFilter === "all") {
+          return true;
+        }
+
+        const theme = themes.find((themeItem) => themeItem.id === item.themeId);
+        return parseLivePlanFromItem(item, theme).liveStreamType === liveTypeFilter;
+      })
+      .sort((a, b) => (a.scheduledDate ?? "9999-99-99").localeCompare(b.scheduledDate ?? "9999-99-99"));
+  }, [contentItems, liveTypeFilter, themes]);
 
   const selectedContentTheme = themes.find(
     (theme) => theme.id === (contentForm.themeId || themes[0]?.id || "")
@@ -1304,6 +1364,174 @@ export function DashboardClient({
     });
   }
 
+  function createWeeklyLivePair(theme: Theme) {
+    const plans = [
+      buildDefaultLivePlan(
+        {
+          ...emptyContentForm,
+          themeId: theme.id,
+          themeNotionPageId: theme.notionPageId,
+          title: `${theme.mainTheme} 作業ライブ`,
+          cta: theme.cta,
+          scheduledDate: addDaysFromToday(2)
+        },
+        theme
+      ),
+      {
+        ...buildDefaultLivePlan(
+          {
+            ...emptyContentForm,
+            themeId: theme.id,
+            themeNotionPageId: theme.notionPageId,
+            title: `${theme.mainTheme} 解説ライブ`,
+            cta: theme.cta,
+            scheduledDate: addDaysFromToday(5)
+          },
+          theme
+        ),
+        liveStreamType: "roadmap" as LiveStreamType,
+        estimatedDurationMinutes: 75,
+        startTime: "20:00"
+      }
+    ];
+
+    const inputs: ContentItemInput[] = plans.map((plan, index) => ({
+      userId: undefined,
+      themeId: theme.id,
+      themeNotionPageId: theme.notionPageId,
+      platform: "youtube_live",
+      contentType: "youtube_live_plan",
+      title: plan.title,
+      status: "generated",
+      scheduledDate: plan.scheduledDate,
+      publishedDate: "",
+      cta: plan.cta,
+      body: "",
+      caption: "",
+      script: toPrettyJson(plan),
+      article: "",
+      hashtags: [],
+      imageProjectId: "",
+      memo: `Phase 7 週2本ライブ ${index + 1}本目`
+    }));
+
+    startTransition(async () => {
+      const results = await Promise.all(inputs.map((input) => saveContentItemAction(input)));
+      const created = results.map((result, index) =>
+        result.data ??
+        ({
+          ...inputs[index],
+          id: localId("content"),
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        } satisfies ContentItem)
+      );
+
+      setContentItems((current) => [...created, ...current]);
+      setActiveSection("lives");
+      setNotice(
+        results.every((result) => result.ok)
+          ? "週2本のYouTubeライブ企画をNotionに保存しました。"
+          : "週2本のYouTubeライブ企画を作りました。一部はブラウザ内の保存です。"
+      );
+    });
+  }
+
+  function createDerivedContentFromLive(
+    item: ContentItem,
+    target: "reel" | "threads" | "x" | "note" | "carousel"
+  ) {
+    const theme = themes.find((themeItem) => themeItem.id === item.themeId);
+    const plan = parseLivePlanFromItem(item, theme);
+    const titlePrefix = plan.title || item.title;
+    const commonMemo = `Phase 7 ライブ配信から派生: ${item.title}`;
+    const outlineText = plan.outline.length > 0 ? plan.outline.join(" / ") : plan.openingHook;
+    const inputMap: Record<typeof target, ContentItemInput> = {
+      reel: {
+        ...contentItemToInput(item),
+        platform: "instagram_reel",
+        contentType: "instagram_reel_script",
+        title: `${titlePrefix} リール切り抜き案`,
+        status: "generated",
+        script: [
+          `Hook: ${plan.openingHook || plan.thumbnailText}`,
+          `Main: ${outlineText}`,
+          `CTA: ${plan.cta}`,
+          `Clip ideas: ${plan.clipIdeas.join(" / ")}`
+        ].join("\n"),
+        body: "",
+        memo: commonMemo
+      },
+      threads: {
+        ...contentItemToInput(item),
+        platform: "threads",
+        contentType: "threads_post",
+        title: `${titlePrefix} Threads投稿案`,
+        status: "generated",
+        body: [plan.openingHook, ...plan.questionsForViewers, plan.cta].filter(Boolean).join("\n\n"),
+        script: "",
+        memo: commonMemo
+      },
+      x: {
+        ...contentItemToInput(item),
+        platform: "x",
+        contentType: "x_post",
+        title: `${titlePrefix} X投稿案`,
+        status: "generated",
+        body: [plan.thumbnailText, outlineText, plan.cta].filter(Boolean).join("\n\n"),
+        script: "",
+        memo: commonMemo
+      },
+      note: {
+        ...contentItemToInput(item),
+        platform: "note",
+        contentType: "note_article",
+        title: `${titlePrefix} note記事案`,
+        status: "generated",
+        article: [
+          `# ${titlePrefix}`,
+          plan.openingHook,
+          ...plan.sections.map((section) => `## ${section.title}\n${section.script}`),
+          plan.cta
+        ].filter(Boolean).join("\n\n"),
+        script: "",
+        memo: commonMemo
+      },
+      carousel: {
+        ...contentItemToInput(item),
+        platform: "instagram",
+        contentType: "instagram_carousel",
+        title: `${titlePrefix} カルーセル案`,
+        status: "generated",
+        body: ["01 表紙", plan.thumbnailText || titlePrefix, "02 要点", outlineText, "03 CTA", plan.cta]
+          .filter(Boolean)
+          .join("\n"),
+        script: "",
+        memo: commonMemo
+      }
+    };
+    const input = inputMap[target];
+
+    startTransition(async () => {
+      const result = await saveContentItemAction(input);
+      const created =
+        result.data ??
+        ({
+          ...input,
+          id: localId("content"),
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        } satisfies ContentItem);
+
+      setContentItems((current) => [created, ...current]);
+      setNotice(
+        result.ok
+          ? "ライブ配信から派生コンテンツをNotionに保存しました。"
+          : `派生コンテンツをブラウザ内に保存しました。${result.error ?? ""}`
+      );
+    });
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 lg:flex-row">
       <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:w-64 lg:shrink-0">
@@ -1332,7 +1560,7 @@ export function DashboardClient({
       <div className="flex min-w-0 flex-1 flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 rounded-lg border border-white/70 bg-white/68 p-6 shadow-soft backdrop-blur md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-medium text-champagne">Phase 5</p>
+          <p className="text-sm font-medium text-champagne">Phase 6-7</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-ink">
             Yuzuki Content Studio
           </h1>
@@ -1365,6 +1593,113 @@ export function DashboardClient({
         <MetricCard label="予約済み" value={summary.scheduled.toString()} />
         <MetricCard label="今月予定" value={scheduledThisMonth.toString()} />
       </section>
+      ) : null}
+
+      {activeSection === "lives" ? (
+      <Panel title="YouTubeライブ配信管理">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+          <div className="grid flex-1 gap-3 md:grid-cols-2">
+            <SelectSimpleField
+              label="配信タイプで絞り込み"
+              value={liveTypeFilter}
+              options={[
+                { value: "all", label: "すべて" },
+                ...liveStreamTypeOptions.map((option) => ({
+                  value: option.value,
+                  label: option.label
+                }))
+              ]}
+              onChange={(value) => setLiveTypeFilter(value as LiveStreamType | "all")}
+            />
+            <SelectSimpleField
+              label="週テーマ"
+              value={selectedLiveTheme?.id ?? ""}
+              options={themes.map((theme) => ({ value: theme.id, label: theme.mainTheme }))}
+              onChange={(value) => setSelectedLiveThemeId(value)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => selectedLiveTheme && createWeeklyLivePair(selectedLiveTheme)}
+            disabled={!selectedLiveTheme || isPending}
+            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            週2本ライブを作成
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          {liveItems.length === 0 ? (
+            <p className="rounded-md border border-stone-200 bg-white/70 px-4 py-6 text-sm text-stone-500">
+              YouTubeライブ企画はまだありません。週テーマを選んで「週2本ライブを作成」を押してください。
+            </p>
+          ) : (
+            liveItems.map((item) => {
+              const theme = themes.find((themeItem) => themeItem.id === item.themeId);
+              const plan = parseLivePlanFromItem(item, theme);
+
+              return (
+                <article key={item.id} className="rounded-lg border border-stone-200 bg-white/72 p-4">
+                  <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-rose px-3 py-1 text-xs text-ink">
+                          {labelFor(liveStreamTypeOptions, plan.liveStreamType)}
+                        </span>
+                        <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
+                          {labelFor(contentStatusOptions, item.status)}
+                        </span>
+                      </div>
+                      <h3 className="mt-2 text-base font-semibold text-ink">{item.title}</h3>
+                      <p className="mt-1 text-sm text-stone-600">
+                        {plan.scheduledDate || "日付未定"} {plan.startTime || ""} / {plan.estimatedDurationMinutes}分
+                      </p>
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-stone-600">
+                        {plan.openingHook || plan.purpose || "ライブの目的や冒頭フックを編集画面で整えます。"}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => selectContentItem(item)}
+                        className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+                      >
+                        企画を編集
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => createImageProjectFromContent(item)}
+                        disabled={isPending || creatingImageForContentId === item.id}
+                        className="rounded-md border border-champagne/60 bg-rose px-3 py-2 text-xs font-medium text-ink disabled:opacity-60"
+                      >
+                        サムネ画像
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <button type="button" onClick={() => createDerivedContentFromLive(item, "reel")} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium">
+                      リール案
+                    </button>
+                    <button type="button" onClick={() => createDerivedContentFromLive(item, "threads")} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium">
+                      Threads案
+                    </button>
+                    <button type="button" onClick={() => createDerivedContentFromLive(item, "x")} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium">
+                      X案
+                    </button>
+                    <button type="button" onClick={() => createDerivedContentFromLive(item, "note")} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium">
+                      note案
+                    </button>
+                    <button type="button" onClick={() => createDerivedContentFromLive(item, "carousel")} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium">
+                      カルーセル案
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </Panel>
       ) : null}
 
       {activeSection === "calendar" ? (
@@ -1796,7 +2131,6 @@ export function DashboardClient({
             />
           </div>
         </div>
-        <ImageEditorPanel form={ensureImageProjectEditor(imageProjectForm)} onChange={updateImageProjectForm} />
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             onClick={submitContentItem}
@@ -1881,9 +2215,20 @@ export function DashboardClient({
             options={imageProjectTypeOptions}
             onChange={(value) => {
               const imageType = value as ImageProjectType;
+              const imagePlatform = imagePlatformForType(imageType);
+              const outputPreset = presetForPlatform(imagePlatform);
               updateImageProjectForm({
                 imageType,
-                format: formatForImageType(imageType)
+                imagePlatform,
+                outputPreset,
+                format: formatForImageType(imageType),
+                slides: createDefaultSlides({
+                  title: imageProjectForm.title || imageProjectForm.contentTitle || "画像プロジェクト",
+                  body: imageProjectForm.prompt,
+                  cta: "",
+                  platform: imagePlatform,
+                  colorTheme: imageProjectForm.colorTheme ?? "korean_pink"
+                })
               });
             }}
           />
@@ -1933,6 +2278,7 @@ export function DashboardClient({
             />
           </div>
         </div>
+        <ImageEditorPanel form={ensureImageProjectEditor(imageProjectForm)} onChange={updateImageProjectForm} />
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             onClick={submitImageProject}
@@ -2320,6 +2666,13 @@ function ImageEditorPanel({
             className="rounded-md bg-ink px-3 py-2 text-xs font-medium text-white"
           >
             選択スライドPNG
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadSlidesAsPng(slides, preset)}
+            className="rounded-md border border-champagne/60 bg-rose px-3 py-2 text-xs font-medium text-ink"
+          >
+            全スライドPNG
           </button>
           <button
             type="button"
