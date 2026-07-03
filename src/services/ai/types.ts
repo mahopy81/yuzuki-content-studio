@@ -1,16 +1,4 @@
-import type { LiveStreamType, Theme } from "@/types/content";
-
-export type SlideTemplateType =
-  | "cover"
-  | "problem"
-  | "deep_pain"
-  | "reason"
-  | "solution"
-  | "steps"
-  | "example"
-  | "mistake"
-  | "summary"
-  | "cta";
+import type { LiveStreamType, SlideTemplateType, Theme } from "@/types/content";
 
 export type GeneratedContentSet = {
   themeId: string;

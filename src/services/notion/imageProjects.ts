@@ -21,6 +21,8 @@ import {
   type ImageProjectInput,
   type ImageProjectStatus,
   type ImageProjectType,
+  type ImagePlatform,
+  type OutputPreset,
   type Platform
 } from "@/types/content";
 
@@ -49,6 +51,10 @@ type ImageProjectJson = {
   negativePrompt?: string;
   referenceUrl?: string;
   outputUrl?: string;
+  imagePlatform?: ImagePlatform;
+  outputPreset?: OutputPreset;
+  slides?: ImageProject["slides"];
+  colorTheme?: string;
 };
 
 function isNotionPageId(value?: string) {
@@ -127,7 +133,11 @@ function projectJson(input: ImageProjectInput): string {
     prompt: input.prompt,
     negativePrompt: input.negativePrompt,
     referenceUrl: input.referenceUrl,
-    outputUrl: input.outputUrl
+    outputUrl: input.outputUrl,
+    imagePlatform: input.imagePlatform,
+    outputPreset: input.outputPreset,
+    slides: input.slides,
+    colorTheme: input.colorTheme
   };
 
   return JSON.stringify(value);
@@ -248,6 +258,10 @@ function pageToImageProject(page: { id: string; properties?: unknown }): ImagePr
     negativePrompt: project.negativePrompt,
     referenceUrl: project.referenceUrl,
     outputUrl: project.outputUrl ?? readUrl(properties, "Exported Files"),
+    imagePlatform: project.imagePlatform,
+    outputPreset: project.outputPreset,
+    slides: project.slides,
+    colorTheme: project.colorTheme,
     memo: readRichText(properties, "Memo"),
     createdAt,
     updatedAt
@@ -290,6 +304,10 @@ export async function updateImageProject(id: string, input: Partial<ImageProject
     negativePrompt: input.negativePrompt ?? current.negativePrompt,
     referenceUrl: input.referenceUrl ?? current.referenceUrl,
     outputUrl: input.outputUrl ?? current.outputUrl,
+    imagePlatform: input.imagePlatform ?? current.imagePlatform,
+    outputPreset: input.outputPreset ?? current.outputPreset,
+    slides: input.slides ?? current.slides,
+    colorTheme: input.colorTheme ?? current.colorTheme,
     memo: input.memo ?? current.memo
   };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import type { KeyboardEvent, PointerEvent } from "react";
 import {
   createSampleDataAction,
   deleteContentItemAction,
@@ -19,18 +20,24 @@ import {
 import {
   contentStatusOptions,
   contentTypeOptions,
+  colorThemeOptions,
+  ctaTemplates,
   imageProjectStatusOptions,
   imageProjectTypeOptions,
+  imagePlatformOptions,
   labelFor,
   liveStreamTypeOptions,
+  outputPresets,
   platformOptions,
   purposeOptions,
+  slideTemplateOptions,
   themeStatusOptions,
   type ContentItem,
   type ContentItemInput,
   type ContentStatus,
   type ContentType,
   type ImageProject,
+  type ImagePlatform,
   type ImageProjectInput,
   type ImageProjectStatus,
   type ImageProjectType,
@@ -39,6 +46,9 @@ import {
   type Theme,
   type ThemeInput,
   type ThemeStatus,
+  type Slide,
+  type SlideElement,
+  type SlideTemplateType,
   type YouTubeLivePlan,
   type YouTubeLiveSection
 } from "@/types/content";
@@ -57,6 +67,14 @@ type BackupData = {
   imageProjects?: ImageProject[];
 };
 
+type DashboardSection =
+  | "overview"
+  | "themes"
+  | "content"
+  | "images"
+  | "calendar"
+  | "status";
+
 type CalendarDay = {
   date: string;
   day: number;
@@ -66,6 +84,17 @@ type CalendarDay = {
 
 const backupKey = "yuzuki-content-studio-phase1";
 const weekdayLabels = ["日", "月", "火", "水", "木", "金", "土"];
+const editorPreviewScale = 0.34;
+const safeAreaMargin = 80;
+
+const navItems: { value: DashboardSection; label: string; description: string }[] = [
+  { value: "overview", label: "ダッシュボード", description: "全体状況" },
+  { value: "themes", label: "テーマ管理", description: "週テーマ" },
+  { value: "content", label: "投稿作成", description: "本文・台本" },
+  { value: "images", label: "画像エディタ", description: "カルーセル" },
+  { value: "calendar", label: "カレンダー", description: "投稿予定" },
+  { value: "status", label: "投稿管理", description: "一覧・状態" }
+];
 
 const emptyThemeForm: ThemeInput = {
   week: "",
@@ -114,6 +143,10 @@ const emptyImageProjectForm: ImageProjectInput = {
   negativePrompt: "",
   referenceUrl: "",
   outputUrl: "",
+  imagePlatform: "instagram_carousel",
+  outputPreset: outputPresets[0],
+  slides: [],
+  colorTheme: "korean_pink",
   memo: ""
 };
 
@@ -391,6 +424,239 @@ function buildImagePrompt(contentItem?: ContentItem, theme?: Theme) {
     .join("\n");
 }
 
+function imagePlatformForType(imageType: ImageProjectType): ImagePlatform {
+  if (imageType === "x_image") {
+    return "x_images";
+  }
+
+  if (imageType === "threads_image") {
+    return "threads_images";
+  }
+
+  return "instagram_carousel";
+}
+
+function presetForPlatform(platform: ImagePlatform) {
+  return outputPresets.find((preset) => preset.platform === platform) ?? outputPresets[0];
+}
+
+function getColorTheme(value?: string) {
+  return colorThemeOptions.find((theme) => theme.value === value) ?? colorThemeOptions[0];
+}
+
+function createTextElement(
+  name: string,
+  content: string,
+  x: number,
+  y: number,
+  width: number,
+  fontSize: number,
+  zIndex: number,
+  type: SlideElement["type"] = "text"
+): SlideElement {
+  return {
+    id: localId("element"),
+    type,
+    name,
+    visible: true,
+    content,
+    x,
+    y,
+    width,
+    height: Math.round(fontSize * 2.2),
+    fontSize,
+    lineHeight: 1.35,
+    fontWeight: type === "cta" ? "bold" : name === "タイトル" ? "bold" : "normal",
+    textAlign: "center",
+    color: "#2f2a2a",
+    backgroundColor: type === "cta" ? "#f4c9d4" : "transparent",
+    borderRadius: type === "cta" ? 28 : 0,
+    zIndex
+  };
+}
+
+function createDefaultSlides({
+  title,
+  body,
+  cta,
+  platform,
+  colorTheme
+}: {
+  title: string;
+  body?: string;
+  cta?: string;
+  platform: ImagePlatform;
+  colorTheme: string;
+}): Slide[] {
+  const preset = presetForPlatform(platform);
+  const theme = getColorTheme(colorTheme);
+  const isInstagram = platform === "instagram_carousel";
+  const templates = isInstagram
+    ? slideTemplateOptions
+    : slideTemplateOptions.filter((template) =>
+        ["cover", "summary", "example", "cta"].includes(template.value)
+      );
+  const maxSlides = Math.min(preset.maxSlides, templates.length);
+
+  return templates.slice(0, maxSlides).map((template, index) => {
+    const label = String(index + 1).padStart(2, "0");
+    const slideTitle = index === 0 ? title : template.label;
+
+    return {
+      id: localId("slide"),
+      templateType: template.value,
+      title: slideTitle,
+      backgroundColor: theme.backgroundColor,
+      colorTheme,
+      elements: [
+        createTextElement("ラベル", label, 90, 88, 180, 34, 1),
+        createTextElement("タイトル", slideTitle, 140, 255, preset.width - 280, 64, 2),
+        createTextElement(
+          "本文",
+          body || "ここに本文を入れます。読者の悩み、解決策、具体例を短くまとめます。",
+          170,
+          430,
+          preset.width - 340,
+          34,
+          3
+        ),
+        createTextElement("CTA", cta || "保存してあとで見返す", 240, preset.height - 210, preset.width - 480, 34, 4, "cta")
+      ].map((element) => ({
+        ...element,
+        color: element.type === "cta" ? theme.textColor : theme.textColor,
+        backgroundColor: element.type === "cta" ? theme.ctaColor : element.backgroundColor
+      }))
+    };
+  });
+}
+
+function ensureImageProjectEditor(input: ImageProjectInput): ImageProjectInput {
+  const imagePlatform = input.imagePlatform ?? imagePlatformForType(input.imageType);
+  const outputPreset = input.outputPreset ?? presetForPlatform(imagePlatform);
+  const colorTheme = input.colorTheme ?? "korean_pink";
+
+  return {
+    ...input,
+    imagePlatform,
+    outputPreset,
+    colorTheme,
+    slides:
+      input.slides && input.slides.length > 0
+        ? input.slides
+        : createDefaultSlides({
+            title: input.title || input.contentTitle || "画像プロジェクト",
+            body: input.prompt,
+            cta: "",
+            platform: imagePlatform,
+            colorTheme
+          })
+  };
+}
+
+function applyColorThemeToSlides(slides: Slide[], colorTheme: string) {
+  const theme = getColorTheme(colorTheme);
+
+  return slides.map((slide) => ({
+    ...slide,
+    colorTheme,
+    backgroundColor: theme.backgroundColor,
+    elements: slide.elements.map((element) => ({
+      ...element,
+      color: element.type === "shape" ? element.color : theme.textColor,
+      backgroundColor: element.type === "cta" ? theme.ctaColor : element.backgroundColor
+    }))
+  }));
+}
+
+function escapeSvgText(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function wrapText(value: string, maxChars: number) {
+  const lines = value.split("\n").flatMap((line) => {
+    if (line.length <= maxChars) {
+      return [line];
+    }
+
+    const chunks: string[] = [];
+    for (let index = 0; index < line.length; index += maxChars) {
+      chunks.push(line.slice(index, index + maxChars));
+    }
+    return chunks;
+  });
+
+  return lines.length > 0 ? lines : [""];
+}
+
+function slideToSvg(slide: Slide, preset = outputPresets[0]) {
+  const sortedElements = [...slide.elements]
+    .filter((element) => element.visible)
+    .sort((a, b) => a.zIndex - b.zIndex);
+  const elementSvg = sortedElements
+    .map((element) => {
+      if (element.type === "shape") {
+        return `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height ?? 80}" rx="${element.borderRadius ?? 0}" fill="${element.backgroundColor ?? "#ffffff"}" />`;
+      }
+
+      const fontSize = element.fontSize ?? 32;
+      const lineHeight = element.lineHeight ?? 1.35;
+      const lines = wrapText(element.content ?? "", Math.max(8, Math.floor(element.width / (fontSize * 0.62))));
+      const textAnchor =
+        element.textAlign === "left" ? "start" : element.textAlign === "right" ? "end" : "middle";
+      const textX =
+        element.textAlign === "left"
+          ? element.x
+          : element.textAlign === "right"
+            ? element.x + element.width
+            : element.x + element.width / 2;
+      const rect =
+        element.type === "cta"
+          ? `<rect x="${element.x - 24}" y="${element.y - 28}" width="${element.width + 48}" height="${(element.height ?? fontSize * 2) + 40}" rx="${element.borderRadius ?? 28}" fill="${element.backgroundColor ?? "#f4c9d4"}" />`
+          : "";
+      const tspans = lines
+        .map(
+          (line, index) =>
+            `<tspan x="${textX}" dy="${index === 0 ? 0 : fontSize * lineHeight}">${escapeSvgText(line)}</tspan>`
+        )
+        .join("");
+
+      return `${rect}<text x="${textX}" y="${element.y}" fill="${element.color ?? "#2f2a2a"}" font-size="${fontSize}" font-weight="${element.fontWeight ?? "normal"}" text-anchor="${textAnchor}" font-family="Arial, sans-serif">${tspans}</text>`;
+    })
+    .join("");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${preset.width}" height="${preset.height}" viewBox="0 0 ${preset.width} ${preset.height}"><rect width="100%" height="100%" fill="${slide.backgroundColor}" />${elementSvg}</svg>`;
+}
+
+function downloadSlideAsPng(slide: Slide, preset = outputPresets[0]) {
+  const svg = slideToSvg(slide, preset);
+  const image = new Image();
+  const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+  image.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = preset.width;
+    canvas.height = preset.height;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    context.drawImage(image, 0, 0);
+    URL.revokeObjectURL(svgUrl);
+    const link = document.createElement("a");
+    link.download = `${slide.title || "slide"}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  };
+
+  image.src = svgUrl;
+}
+
 function readBackup() {
   if (typeof window === "undefined") {
     return undefined;
@@ -434,6 +700,7 @@ export function DashboardClient({
   const [creatingImageForContentId, setCreatingImageForContentId] = useState<string | null>(null);
   const [generatingThemeId, setGeneratingThemeId] = useState<string | null>(null);
   const [scheduleMonth, setScheduleMonth] = useState(() => formatMonthInput(new Date()));
+  const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
   const [notice, setNotice] = useState(
     backup
       ? "Notionから読み込めなかったため、ブラウザ内のバックアップを表示しています。"
@@ -522,6 +789,7 @@ export function DashboardClient({
   }
 
   function selectTheme(theme: Theme) {
+    setActiveSection("themes");
     setEditingThemeId(theme.id);
     setThemeForm({
       userId: theme.userId,
@@ -545,6 +813,7 @@ export function DashboardClient({
   }
 
   function selectContentItem(contentItem: ContentItem) {
+    setActiveSection("content");
     setEditingContentId(contentItem.id);
     setContentForm({
       userId: contentItem.userId,
@@ -586,8 +855,9 @@ export function DashboardClient({
   }
 
   function selectImageProject(imageProject: ImageProject) {
+    setActiveSection("images");
     setEditingImageProjectId(imageProject.id);
-    setImageProjectForm({
+    setImageProjectForm(ensureImageProjectEditor({
       userId: imageProject.userId,
       themeId: imageProject.themeId ?? "",
       themeTitle: imageProject.themeTitle ?? "",
@@ -602,17 +872,21 @@ export function DashboardClient({
       negativePrompt: imageProject.negativePrompt ?? "",
       referenceUrl: imageProject.referenceUrl ?? "",
       outputUrl: imageProject.outputUrl ?? "",
+      imagePlatform: imageProject.imagePlatform,
+      outputPreset: imageProject.outputPreset,
+      slides: imageProject.slides,
+      colorTheme: imageProject.colorTheme,
       memo: imageProject.memo ?? ""
-    });
+    }));
   }
 
   function resetImageProjectForm() {
     setEditingImageProjectId(null);
-    setImageProjectForm({
+    setImageProjectForm(ensureImageProjectEditor({
       ...emptyImageProjectForm,
       themeId: themes[0]?.id ?? "",
       themeTitle: themes[0]?.mainTheme ?? ""
-    });
+    }));
   }
 
   function updateImageProjectForm(input: Partial<ImageProjectInput>) {
@@ -726,13 +1000,13 @@ export function DashboardClient({
       const selectedContent = contentItems.find(
         (item) => item.id === imageProjectForm.contentItemId
       );
-      const input: ImageProjectInput = {
+      const input: ImageProjectInput = ensureImageProjectEditor({
         ...imageProjectForm,
         themeTitle: selectedTheme?.mainTheme ?? imageProjectForm.themeTitle,
         contentTitle: selectedContent?.title ?? imageProjectForm.contentTitle,
         title: imageProjectForm.title.trim(),
         prompt: imageProjectForm.prompt.trim()
-      };
+      });
 
       if (!input.title || !input.prompt) {
         setNotice("画像プロジェクト名とプロンプトは必須です。");
@@ -789,12 +1063,36 @@ export function DashboardClient({
       const imageProject = result.data;
 
       if (imageProject) {
-        setImageProjects((current) => [imageProject, ...current]);
+        const imageType = imageProject.imageType ?? imageTypeForContent(contentItem);
+        const editorInput = ensureImageProjectEditor({
+          ...imageProject,
+          imagePlatform: imageProject.imagePlatform ?? imagePlatformForType(imageType),
+          outputPreset: imageProject.outputPreset ?? presetForPlatform(imagePlatformForType(imageType)),
+          slides:
+            imageProject.slides && imageProject.slides.length > 0
+              ? imageProject.slides
+              : createDefaultSlides({
+                  title: contentItem.title,
+                  body: buildImagePrompt(contentItem, theme),
+                  cta: theme?.cta,
+                  platform: imagePlatformForType(imageType),
+                  colorTheme: imageProject.colorTheme ?? "korean_pink"
+                })
+        });
+        const editorProject: ImageProject = {
+          ...imageProject,
+          ...editorInput
+        };
+
+        setImageProjects((current) => [editorProject, ...current]);
         setContentItems((current) =>
           current.map((item) =>
-            item.id === contentItem.id ? { ...item, imageProjectId: imageProject.id } : item
+            item.id === contentItem.id ? { ...item, imageProjectId: editorProject.id } : item
           )
         );
+        setImageProjectForm(editorProject);
+        setEditingImageProjectId(editorProject.id);
+        setActiveSection("images");
         setNotice("投稿から画像プロジェクトを作成し、Notionに保存しました。");
         return;
       }
@@ -814,12 +1112,25 @@ export function DashboardClient({
         format: formatForImageType(imageType),
         prompt: buildImagePrompt(contentItem, theme),
         negativePrompt: "文字が多すぎる、読みにくい、暗すぎる、過度な装飾、低解像度",
+        imagePlatform: imagePlatformForType(imageType),
+        outputPreset: presetForPlatform(imagePlatformForType(imageType)),
+        slides: createDefaultSlides({
+          title: contentItem.title,
+          body: buildImagePrompt(contentItem, theme),
+          cta: theme?.cta,
+          platform: imagePlatformForType(imageType),
+          colorTheme: "korean_pink"
+        }),
+        colorTheme: "korean_pink",
         memo: `Notion保存に失敗したためローカル作成: ${result.error ?? ""}`,
         createdAt: nowIso(),
         updatedAt: nowIso()
       };
 
       setImageProjects((current) => [localProject, ...current]);
+      setImageProjectForm(localProject);
+      setEditingImageProjectId(localProject.id);
+      setActiveSection("images");
       setNotice(`画像プロジェクトをブラウザにバックアップしました。${result.error ?? ""}`);
     });
   }
@@ -994,7 +1305,31 @@ export function DashboardClient({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 lg:flex-row">
+      <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:w-64 lg:shrink-0">
+        <div className="rounded-lg border border-white/70 bg-white/72 p-4 shadow-soft backdrop-blur">
+          <p className="text-xs font-medium text-champagne">Yuzuki Content Studio</p>
+          <nav className="mt-4 space-y-2">
+            {navItems.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setActiveSection(item.value)}
+                className={`w-full rounded-md border px-3 py-3 text-left transition ${
+                  activeSection === item.value
+                    ? "border-champagne bg-rose text-ink"
+                    : "border-stone-200 bg-white/70 text-stone-600 hover:border-champagne/60"
+                }`}
+              >
+                <span className="block text-sm font-semibold">{item.label}</span>
+                <span className="mt-1 block text-xs">{item.description}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 rounded-lg border border-white/70 bg-white/68 p-6 shadow-soft backdrop-blur md:flex-row md:items-center">
         <div>
           <p className="text-sm font-medium text-champagne">Phase 5</p>
@@ -1022,6 +1357,7 @@ export function DashboardClient({
         </div>
       ) : null}
 
+      {activeSection === "overview" ? (
       <section className="grid gap-4 md:grid-cols-5">
         <MetricCard label="今週のテーマ" value={currentWeekTheme?.mainTheme ?? "未設定"} />
         <MetricCard label="作成中" value={summary.drafting.toString()} />
@@ -1029,7 +1365,9 @@ export function DashboardClient({
         <MetricCard label="予約済み" value={summary.scheduled.toString()} />
         <MetricCard label="今月予定" value={scheduledThisMonth.toString()} />
       </section>
+      ) : null}
 
+      {activeSection === "calendar" ? (
       <Panel title="投稿カレンダー">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div className="flex flex-wrap items-center gap-2">
@@ -1162,8 +1500,11 @@ export function DashboardClient({
           </div>
         </div>
       </Panel>
+      ) : null}
 
+      {activeSection === "themes" || activeSection === "overview" ? (
       <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        {activeSection === "themes" ? (
         <Panel title="テーマ管理">
           <div className="grid gap-3 md:grid-cols-2">
             <TextField
@@ -1253,7 +1594,9 @@ export function DashboardClient({
             </button>
           </div>
         </Panel>
+        ) : null}
 
+        {activeSection === "overview" ? (
         <Panel title="投稿状況">
           <div className="space-y-4">
             <div>
@@ -1290,8 +1633,11 @@ export function DashboardClient({
             />
           </div>
         </Panel>
+        ) : null}
       </section>
+      ) : null}
 
+      {activeSection === "themes" ? (
       <Panel title="テーマ一覧">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {themes.length === 0 ? (
@@ -1340,7 +1686,9 @@ export function DashboardClient({
           )}
         </div>
       </Panel>
+      ) : null}
 
+      {activeSection === "content" ? (
       <Panel title="コンテンツ作成・編集">
         <div className="grid gap-3 md:grid-cols-3">
           <SelectSimpleField
@@ -1448,6 +1796,7 @@ export function DashboardClient({
             />
           </div>
         </div>
+        <ImageEditorPanel form={ensureImageProjectEditor(imageProjectForm)} onChange={updateImageProjectForm} />
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             onClick={submitContentItem}
@@ -1464,7 +1813,9 @@ export function DashboardClient({
           </button>
         </div>
       </Panel>
+      ) : null}
 
+      {activeSection === "images" ? (
       <Panel title="画像プロジェクト作成・編集">
         <div className="grid gap-3 md:grid-cols-3">
           <SelectSimpleField
@@ -1495,9 +1846,18 @@ export function DashboardClient({
                 themeTitle: selectedTheme?.mainTheme ?? imageProjectForm.themeTitle,
                 platform: selectedContent?.platform ?? imageProjectForm.platform,
                 imageType,
+                imagePlatform: imagePlatformForType(imageType),
+                outputPreset: presetForPlatform(imagePlatformForType(imageType)),
                 title: selectedContent ? `${selectedContent.title} 画像案` : imageProjectForm.title,
                 format: formatForImageType(imageType),
                 prompt: buildImagePrompt(selectedContent, selectedTheme),
+                slides: createDefaultSlides({
+                  title: selectedContent?.title ?? "画像プロジェクト",
+                  body: buildImagePrompt(selectedContent, selectedTheme),
+                  cta: selectedTheme?.cta,
+                  platform: imagePlatformForType(imageType),
+                  colorTheme: imageProjectForm.colorTheme ?? "korean_pink"
+                }),
                 negativePrompt:
                   imageProjectForm.negativePrompt ||
                   "文字が多すぎる、読みにくい、暗すぎる、過度な装飾、低解像度"
@@ -1589,7 +1949,9 @@ export function DashboardClient({
           </button>
         </div>
       </Panel>
+      ) : null}
 
+      {activeSection === "images" ? (
       <Panel title="画像プロジェクト一覧">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {imageProjects.length === 0 ? (
@@ -1647,7 +2009,9 @@ export function DashboardClient({
           )}
         </div>
       </Panel>
+      ) : null}
 
+      {activeSection === "status" ? (
       <Panel title="コンテンツ一覧">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] border-separate border-spacing-0 text-left text-sm">
@@ -1752,6 +2116,478 @@ export function DashboardClient({
           </table>
         </div>
       </Panel>
+      ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ImageEditorPanel({
+  form,
+  onChange
+}: {
+  form: ImageProjectInput;
+  onChange: (input: Partial<ImageProjectInput>) => void;
+}) {
+  const editorForm = ensureImageProjectEditor(form);
+  const slides = useMemo(() => editorForm.slides ?? [], [editorForm.slides]);
+  const preset = editorForm.outputPreset ?? outputPresets[0];
+  const [selectedSlideId, setSelectedSlideId] = useState(slides[0]?.id ?? "");
+  const [selectedElementId, setSelectedElementId] = useState(slides[0]?.elements[0]?.id ?? "");
+  const [showSafeArea, setShowSafeArea] = useState(true);
+  const [draggingElementId, setDraggingElementId] = useState<string | null>(null);
+
+  const selectedSlide = slides.find((slide) => slide.id === selectedSlideId) ?? slides[0];
+  const selectedElement =
+    selectedSlide?.elements.find((element) => element.id === selectedElementId) ??
+    selectedSlide?.elements[0];
+
+  function updateSlides(nextSlides: Slide[]) {
+    onChange({ slides: nextSlides });
+  }
+
+  function updateSlide(slideId: string, input: Partial<Slide>) {
+    updateSlides(slides.map((slide) => (slide.id === slideId ? { ...slide, ...input } : slide)));
+  }
+
+  function updateElement(slideId: string, elementId: string, input: Partial<SlideElement>) {
+    updateSlides(
+      slides.map((slide) =>
+        slide.id === slideId
+          ? {
+              ...slide,
+              elements: slide.elements.map((element) =>
+                element.id === elementId ? { ...element, ...input } : element
+              )
+            }
+          : slide
+      )
+    );
+  }
+
+  function moveElement(slideId: string, elementId: string, x: number, y: number) {
+    const snapTargets = [
+      safeAreaMargin,
+      preset.width / 2,
+      preset.width - safeAreaMargin,
+      preset.height / 2,
+      preset.height - safeAreaMargin
+    ];
+    const snap = (value: number) => {
+      const target = snapTargets.find((snapValue) => Math.abs(snapValue - value) <= 12);
+      return target ?? value;
+    };
+
+    updateElement(slideId, elementId, {
+      x: Math.max(0, Math.min(preset.width, snap(Math.round(x)))),
+      y: Math.max(0, Math.min(preset.height, snap(Math.round(y))))
+    });
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!draggingElementId || !selectedSlide) {
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) / editorPreviewScale;
+    const y = (event.clientY - bounds.top) / editorPreviewScale;
+    const element = selectedSlide.elements.find((item) => item.id === draggingElementId);
+
+    if (!element) {
+      return;
+    }
+
+    moveElement(selectedSlide.id, draggingElementId, x - element.width / 2, y);
+  }
+
+  function handleKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+    if (!selectedSlide || !selectedElement) {
+      return;
+    }
+
+    const amount = event.shiftKey ? 10 : 1;
+    const movement = {
+      ArrowUp: { x: 0, y: -amount },
+      ArrowDown: { x: 0, y: amount },
+      ArrowLeft: { x: -amount, y: 0 },
+      ArrowRight: { x: amount, y: 0 }
+    }[event.key];
+
+    if (!movement) {
+      return;
+    }
+
+    event.preventDefault();
+    moveElement(
+      selectedSlide.id,
+      selectedElement.id,
+      selectedElement.x + movement.x,
+      selectedElement.y + movement.y
+    );
+  }
+
+  function duplicateSlide() {
+    if (!selectedSlide || slides.length >= preset.maxSlides) {
+      return;
+    }
+
+    const duplicated: Slide = {
+      ...selectedSlide,
+      id: localId("slide"),
+      title: `${selectedSlide.title} コピー`,
+      elements: selectedSlide.elements.map((element) => ({ ...element, id: localId("element") }))
+    };
+
+    const nextSlides = [...slides, duplicated];
+    updateSlides(nextSlides);
+    setSelectedSlideId(duplicated.id);
+    setSelectedElementId(duplicated.elements[0]?.id ?? "");
+  }
+
+  function deleteSlide() {
+    if (!selectedSlide || slides.length <= 1) {
+      return;
+    }
+
+    const nextSlides = slides.filter((slide) => slide.id !== selectedSlide.id);
+    updateSlides(nextSlides);
+    setSelectedSlideId(nextSlides[0]?.id ?? "");
+    setSelectedElementId(nextSlides[0]?.elements[0]?.id ?? "");
+  }
+
+  function changeColorTheme(colorTheme: string) {
+    onChange({
+      colorTheme,
+      slides: applyColorThemeToSlides(slides, colorTheme)
+    });
+  }
+
+  function changeImagePlatform(imagePlatform: ImagePlatform) {
+    const nextPreset = presetForPlatform(imagePlatform);
+    onChange({
+      imagePlatform,
+      outputPreset: nextPreset,
+      format: `${nextPreset.width}x${nextPreset.height}`,
+      slides: createDefaultSlides({
+        title: form.title || "画像プロジェクト",
+        body: form.prompt,
+        cta: "",
+        platform: imagePlatform,
+        colorTheme: form.colorTheme ?? "korean_pink"
+      })
+    });
+  }
+
+  function changeSlideTemplate(templateType: SlideTemplateType) {
+    if (!selectedSlide) {
+      return;
+    }
+
+    updateSlide(selectedSlide.id, {
+      templateType,
+      title: labelFor(slideTemplateOptions, templateType)
+    });
+  }
+
+  function applyCtaTemplate(content: string) {
+    if (!selectedSlide) {
+      return;
+    }
+
+    const ctaElement =
+      selectedSlide.elements.find((element) => element.type === "cta") ?? selectedSlide.elements[0];
+
+    if (ctaElement) {
+      updateElement(selectedSlide.id, ctaElement.id, { content });
+      setSelectedElementId(ctaElement.id);
+    }
+  }
+
+  return (
+    <div className="mt-6 rounded-lg border border-stone-200 bg-white/64 p-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+        <div>
+          <h3 className="text-base font-semibold text-ink">画像エディタ</h3>
+          <p className="mt-1 text-xs text-stone-500">
+            要素をクリックして選択し、ドラッグまたは矢印キーで位置を調整できます。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => selectedSlide && downloadSlideAsPng(selectedSlide, preset)}
+            className="rounded-md bg-ink px-3 py-2 text-xs font-medium text-white"
+          >
+            選択スライドPNG
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSafeArea((value) => !value)}
+            className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+          >
+            セーフエリア{showSafeArea ? "非表示" : "表示"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[220px_minmax(380px,1fr)_320px]">
+        <div className="space-y-3">
+          <SelectField
+            label="出力形式"
+            value={editorForm.imagePlatform ?? "instagram_carousel"}
+            options={imagePlatformOptions}
+            onChange={(value) => changeImagePlatform(value as ImagePlatform)}
+          />
+          <SelectSimpleField
+            label="配色テーマ"
+            value={editorForm.colorTheme ?? "korean_pink"}
+            options={colorThemeOptions.map((theme) => ({ value: theme.value, label: theme.label }))}
+            onChange={changeColorTheme}
+          />
+          <SelectField
+            label="テンプレート"
+            value={selectedSlide?.templateType ?? "cover"}
+            options={slideTemplateOptions}
+            onChange={(value) => changeSlideTemplate(value as SlideTemplateType)}
+          />
+          <div className="rounded-md border border-stone-200 bg-white/75 p-3">
+            <p className="text-sm font-medium text-ink">スライド</p>
+            <div className="mt-2 space-y-2">
+              {slides.map((slide, index) => (
+                <button
+                  key={slide.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedSlideId(slide.id);
+                    setSelectedElementId(slide.elements[0]?.id ?? "");
+                  }}
+                  className={`w-full rounded-md border px-3 py-2 text-left text-xs ${
+                    selectedSlide?.id === slide.id
+                      ? "border-champagne bg-rose text-ink"
+                      : "border-stone-200 bg-white text-stone-600"
+                  }`}
+                >
+                  {index + 1}. {slide.title}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={duplicateSlide}
+                disabled={slides.length >= preset.maxSlides}
+                className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium disabled:opacity-50"
+              >
+                複製
+              </button>
+              <button
+                type="button"
+                onClick={deleteSlide}
+                disabled={slides.length <= 1}
+                className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 disabled:opacity-50"
+              >
+                削除
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-auto rounded-lg border border-stone-200 bg-stone-100/70 p-4">
+          {selectedSlide ? (
+            <div
+              role="application"
+              tabIndex={0}
+              onKeyDown={handleKeyboard}
+              onPointerMove={handlePointerMove}
+              onPointerUp={() => setDraggingElementId(null)}
+              onPointerLeave={() => setDraggingElementId(null)}
+              className="relative mx-auto outline-none"
+              style={{
+                width: preset.width * editorPreviewScale,
+                height: preset.height * editorPreviewScale,
+                backgroundColor: selectedSlide.backgroundColor
+              }}
+            >
+              {showSafeArea ? (
+                <>
+                  <div
+                    className="pointer-events-none absolute border border-dashed border-champagne"
+                    style={{
+                      left: safeAreaMargin * editorPreviewScale,
+                      top: safeAreaMargin * editorPreviewScale,
+                      width: (preset.width - safeAreaMargin * 2) * editorPreviewScale,
+                      height: (preset.height - safeAreaMargin * 2) * editorPreviewScale
+                    }}
+                  />
+                  <div
+                    className="pointer-events-none absolute top-0 h-full border-l border-dashed border-stone-300"
+                    style={{ left: (preset.width / 2) * editorPreviewScale }}
+                  />
+                  <div
+                    className="pointer-events-none absolute left-0 w-full border-t border-dashed border-stone-300"
+                    style={{ top: (preset.height / 2) * editorPreviewScale }}
+                  />
+                </>
+              ) : null}
+
+              {[...selectedSlide.elements]
+                .sort((a, b) => a.zIndex - b.zIndex)
+                .map((element) =>
+                  element.visible ? (
+                    <button
+                      key={element.id}
+                      type="button"
+                      onPointerDown={(event) => {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        setSelectedElementId(element.id);
+                        setDraggingElementId(element.id);
+                      }}
+                      className={`absolute cursor-move border text-center leading-tight ${
+                        selectedElementId === element.id
+                          ? "border-ink ring-2 ring-champagne"
+                          : "border-transparent"
+                      }`}
+                      style={{
+                        left: element.x * editorPreviewScale,
+                        top: element.y * editorPreviewScale,
+                        width: element.width * editorPreviewScale,
+                        minHeight: (element.height ?? 80) * editorPreviewScale,
+                        zIndex: element.zIndex,
+                        color: element.color,
+                        backgroundColor:
+                          element.backgroundColor === "transparent"
+                            ? "transparent"
+                            : element.backgroundColor,
+                        borderRadius: (element.borderRadius ?? 0) * editorPreviewScale,
+                        fontSize: (element.fontSize ?? 32) * editorPreviewScale,
+                        lineHeight: element.lineHeight ?? 1.35,
+                        fontWeight: element.fontWeight,
+                        textAlign: element.textAlign
+                      }}
+                    >
+                      {element.content}
+                    </button>
+                  ) : null
+                )}
+            </div>
+          ) : (
+            <p className="text-sm text-stone-500">スライドがありません。</p>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-md border border-stone-200 bg-white/75 p-3">
+            <p className="text-sm font-medium text-ink">CTAテンプレート</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {ctaTemplates.map((template) => (
+                <button
+                  key={template}
+                  type="button"
+                  onClick={() => applyCtaTemplate(template)}
+                  className="rounded-md border border-stone-200 bg-white px-2 py-1 text-xs"
+                >
+                  {template}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {selectedSlide && selectedElement ? (
+            <div className="rounded-md border border-stone-200 bg-white/75 p-3">
+              <p className="text-sm font-medium text-ink">選択中: {selectedElement.name}</p>
+              <div className="mt-3 space-y-3">
+                <TextAreaField
+                  label="テキスト"
+                  value={selectedElement.content ?? ""}
+                  rows={4}
+                  onChange={(value) =>
+                    updateElement(selectedSlide.id, selectedElement.id, { content: value })
+                  }
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <TextField
+                    label="X位置"
+                    type="number"
+                    value={selectedElement.x.toString()}
+                    onChange={(value) =>
+                      updateElement(selectedSlide.id, selectedElement.id, { x: Number(value) || 0 })
+                    }
+                  />
+                  <TextField
+                    label="Y位置"
+                    type="number"
+                    value={selectedElement.y.toString()}
+                    onChange={(value) =>
+                      updateElement(selectedSlide.id, selectedElement.id, { y: Number(value) || 0 })
+                    }
+                  />
+                  <TextField
+                    label="幅"
+                    type="number"
+                    value={selectedElement.width.toString()}
+                    onChange={(value) =>
+                      updateElement(selectedSlide.id, selectedElement.id, {
+                        width: Number(value) || selectedElement.width
+                      })
+                    }
+                  />
+                  <TextField
+                    label="文字サイズ"
+                    type="number"
+                    value={(selectedElement.fontSize ?? 32).toString()}
+                    onChange={(value) =>
+                      updateElement(selectedSlide.id, selectedElement.id, {
+                        fontSize: Number(value) || selectedElement.fontSize
+                      })
+                    }
+                  />
+                  <TextField
+                    label="行間"
+                    type="number"
+                    value={(selectedElement.lineHeight ?? 1.35).toString()}
+                    onChange={(value) =>
+                      updateElement(selectedSlide.id, selectedElement.id, {
+                        lineHeight: Number(value) || selectedElement.lineHeight
+                      })
+                    }
+                  />
+                  <label className="block text-sm">
+                    <span className="font-medium text-ink">表示</span>
+                    <select
+                      value={selectedElement.visible ? "show" : "hide"}
+                      onChange={(event) =>
+                        updateElement(selectedSlide.id, selectedElement.id, {
+                          visible: event.target.value === "show"
+                        })
+                      }
+                      className="mt-2 w-full rounded-md border border-stone-200 bg-white/85 px-3 py-2 outline-none transition focus:border-champagne"
+                    >
+                      <option value="show">表示</option>
+                      <option value="hide">非表示</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="block text-sm">
+                  <span className="font-medium text-ink">背景色</span>
+                  <input
+                    type="color"
+                    value={selectedSlide.backgroundColor}
+                    onChange={(event) =>
+                      updateSlide(selectedSlide.id, { backgroundColor: event.target.value })
+                    }
+                    className="mt-2 h-10 w-full rounded-md border border-stone-200 bg-white/85"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-md border border-stone-200 bg-white/75 p-3 text-sm text-stone-500">
+              プレビュー上の要素をクリックすると編集できます。
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

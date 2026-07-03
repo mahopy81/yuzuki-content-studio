@@ -48,6 +48,60 @@ export type ImageProjectStatus =
   | "published"
   | "rejected";
 
+export type ImagePlatform = "instagram_carousel" | "x_images" | "threads_images";
+
+export type OutputPreset = {
+  platform: ImagePlatform;
+  width: number;
+  height: number;
+  maxSlides: number;
+};
+
+export type SlideElementType = "text" | "image" | "shape" | "cta";
+
+export type SlideTemplateType =
+  | "cover"
+  | "problem"
+  | "deep_pain"
+  | "reason"
+  | "solution"
+  | "steps"
+  | "example"
+  | "mistake"
+  | "summary"
+  | "cta";
+
+export type SlideElement = {
+  id: string;
+  type: SlideElementType;
+  name: string;
+  visible: boolean;
+  content?: string;
+  src?: string;
+  x: number;
+  y: number;
+  width: number;
+  height?: number;
+  fontSize?: number;
+  lineHeight?: number;
+  fontWeight?: "normal" | "bold";
+  textAlign?: "left" | "center" | "right";
+  color?: string;
+  backgroundColor?: string;
+  borderRadius?: number;
+  zIndex: number;
+};
+
+export type Slide = {
+  id: string;
+  templateType: SlideTemplateType;
+  title: string;
+  backgroundColor: string;
+  backgroundImage?: string;
+  colorTheme: string;
+  elements: SlideElement[];
+};
+
 export type LiveStreamType =
   | "work_with_me"
   | "chat"
@@ -152,6 +206,10 @@ export type ImageProject = {
   negativePrompt?: string;
   referenceUrl?: string;
   outputUrl?: string;
+  imagePlatform?: ImagePlatform;
+  outputPreset?: OutputPreset;
+  slides?: Slide[];
+  colorTheme?: string;
   memo?: string;
   createdAt: string;
   updatedAt: string;
@@ -245,6 +303,87 @@ export const imageProjectStatusOptions: SelectOption<ImageProjectStatus>[] = [
   { value: "approved", label: "採用", notionLabel: "Approved" },
   { value: "published", label: "投稿済み", notionLabel: "Published" },
   { value: "rejected", label: "ボツ", notionLabel: "Rejected" }
+];
+
+export const outputPresets: OutputPreset[] = [
+  { platform: "instagram_carousel", width: 1080, height: 1080, maxSlides: 10 },
+  { platform: "x_images", width: 1600, height: 900, maxSlides: 4 },
+  { platform: "threads_images", width: 1080, height: 1350, maxSlides: 4 }
+];
+
+export const imagePlatformOptions: SelectOption<ImagePlatform>[] = [
+  { value: "instagram_carousel", label: "Instagramカルーセル", notionLabel: "Instagram Carousel" },
+  { value: "x_images", label: "X画像", notionLabel: "X Images" },
+  { value: "threads_images", label: "Threads画像", notionLabel: "Threads Images" }
+];
+
+export const slideTemplateOptions: SelectOption<SlideTemplateType>[] = [
+  { value: "cover", label: "表紙", notionLabel: "Cover" },
+  { value: "problem", label: "共感・問題提起", notionLabel: "Problem" },
+  { value: "deep_pain", label: "悩みの深掘り", notionLabel: "Deep Pain" },
+  { value: "reason", label: "原因・理由", notionLabel: "Reason" },
+  { value: "solution", label: "解決策", notionLabel: "Solution" },
+  { value: "steps", label: "3ステップ解説", notionLabel: "Steps" },
+  { value: "example", label: "具体例", notionLabel: "Example" },
+  { value: "mistake", label: "よくある失敗", notionLabel: "Mistake" },
+  { value: "summary", label: "まとめ", notionLabel: "Summary" },
+  { value: "cta", label: "CTA", notionLabel: "CTA" }
+];
+
+export const colorThemeOptions = [
+  {
+    value: "korean_pink",
+    label: "Korean Pink",
+    backgroundColor: "#fff4f6",
+    textColor: "#2f2a2a",
+    accentColor: "#d7ad68",
+    ctaColor: "#f4c9d4"
+  },
+  {
+    value: "minimal_white",
+    label: "Minimal White",
+    backgroundColor: "#ffffff",
+    textColor: "#222222",
+    accentColor: "#d8d8d8",
+    ctaColor: "#f3f3f3"
+  },
+  {
+    value: "soft_purple",
+    label: "Soft Purple",
+    backgroundColor: "#f6f0ff",
+    textColor: "#31263f",
+    accentColor: "#c9a7ef",
+    ctaColor: "#eadcff"
+  },
+  {
+    value: "cafe_beige",
+    label: "Cafe Beige",
+    backgroundColor: "#f7efe3",
+    textColor: "#3b2f2a",
+    accentColor: "#b58b5b",
+    ctaColor: "#ead7bd"
+  },
+  {
+    value: "clean_blue",
+    label: "Clean Blue",
+    backgroundColor: "#eef7ff",
+    textColor: "#1f3147",
+    accentColor: "#8eb8df",
+    ctaColor: "#d7ebff"
+  }
+];
+
+export const ctaTemplates = [
+  "保存してあとで見返す",
+  "詳しくはプロフィールへ",
+  "LINEで無料ロードマップ配布中",
+  "ワークショップで一緒に整理しよう",
+  "コメントで「AI」と送ってね",
+  "noteで詳しく解説しています",
+  "無料相談はプロフィールから",
+  "迷ったらまず保存",
+  "ライブで一緒に作業しよう",
+  "次回の配信も見に来てね"
 ];
 
 export const liveStreamTypeOptions: SelectOption<LiveStreamType>[] = [
