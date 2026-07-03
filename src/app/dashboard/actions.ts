@@ -10,17 +10,26 @@ import {
   updateContentItem
 } from "@/services/notion/contentItems";
 import {
+  createAnalysis,
+  deleteAnalysis,
+  listAnalysis,
+  updateAnalysis
+} from "@/services/notion/analysis";
+import {
   createImageProject,
   deleteImageProject,
   listImageProjects,
   updateImageProject
 } from "@/services/notion/imageProjects";
-import { generatedContentToText, generateMockContentSet } from "@/services/ai/mockContent";
+import { generateContentSet } from "@/services/ai/generator";
+import { generatedContentToText } from "@/services/ai/mockContent";
 import { createTheme, deleteTheme, listThemes, updateTheme } from "@/services/notion/themes";
 import type {
   ContentItem,
   ContentItemInput,
   ContentStatus,
+  Analysis,
+  AnalysisInput,
   ImageProject,
   ImageProjectInput,
   ImageProjectType,
@@ -58,19 +67,26 @@ export async function signOut() {
 }
 
 export async function getDashboardData(): Promise<
-  ActionResult<{ themes: Theme[]; contentItems: ContentItem[]; imageProjects: ImageProject[] }>
+  ActionResult<{
+    themes: Theme[];
+    contentItems: ContentItem[];
+    imageProjects: ImageProject[];
+    analysisItems: Analysis[];
+  }>
 > {
   try {
     await getUserId();
     const [themes, contentItems] = await Promise.all([listThemes(), listContentItems()]);
     const imageProjects = await listImageProjects().catch(() => []);
+    const analysisItems = await listAnalysis().catch(() => []);
 
     return {
       ok: true,
       data: {
         themes,
         contentItems,
-        imageProjects
+        imageProjects,
+        analysisItems
       }
     };
   } catch (error) {
@@ -79,7 +95,8 @@ export async function getDashboardData(): Promise<
       data: {
         themes: [],
         contentItems: [],
-        imageProjects: []
+        imageProjects: [],
+        analysisItems: []
       },
       error: errorMessage(error)
     };
@@ -198,6 +215,42 @@ export async function deleteImageProjectAction(id: string): Promise<ActionResult
   try {
     await getUserId();
     await deleteImageProject(id);
+    revalidatePath("/dashboard");
+    return { ok: true, data: { id } };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function saveAnalysisAction(input: AnalysisInput): Promise<ActionResult<Analysis>> {
+  try {
+    const userId = await getUserId();
+    const analysis = await createAnalysis({ ...input, userId });
+    revalidatePath("/dashboard");
+    return { ok: true, data: analysis };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function updateAnalysisAction(
+  id: string,
+  input: Partial<AnalysisInput>
+): Promise<ActionResult<Analysis>> {
+  try {
+    const userId = await getUserId();
+    const analysis = await updateAnalysis(id, { ...input, userId });
+    revalidatePath("/dashboard");
+    return { ok: true, data: analysis };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function deleteAnalysisAction(id: string): Promise<ActionResult<{ id: string }>> {
+  try {
+    await getUserId();
+    await deleteAnalysis(id);
     revalidatePath("/dashboard");
     return { ok: true, data: { id } };
   } catch (error) {
@@ -356,14 +409,18 @@ export async function generateContentSetAction(
 ): Promise<ActionResult<{ contentItems: ContentItem[] }>> {
   try {
     const userId = await getUserId();
-    const generated = generateMockContentSet({ theme });
+    const generatedResult = await generateContentSet({ theme });
+    const generated = generatedResult.data;
     const base = {
       userId,
       themeId: theme.id,
       themeNotionPageId: theme.notionPageId,
       status: "generated" as const,
       cta: theme.cta,
-      memo: "Phase 2のモック一括生成で作成"
+      memo:
+        generatedResult.source === "claude"
+          ? "Claude Opusで一括生成"
+          : "Phase 2のモック一括生成で作成"
     };
 
     const inputs: ContentItemInput[] = [

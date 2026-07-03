@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import type { KeyboardEvent, PointerEvent } from "react";
+import type { ChangeEvent, KeyboardEvent, PointerEvent } from "react";
 import {
   createSampleDataAction,
+  deleteAnalysisAction,
   deleteContentItemAction,
   deleteImageProjectAction,
   deleteThemeAction,
   generateContentSetAction,
   createImageProjectFromContentAction,
+  saveAnalysisAction,
   saveContentItemAction,
   saveImageProjectAction,
   saveThemeAction,
+  updateAnalysisAction,
   updateContentItemAction,
   updateImageProjectAction,
   updateContentStatusAction,
@@ -36,6 +39,8 @@ import {
   type ContentItemInput,
   type ContentStatus,
   type ContentType,
+  type Analysis,
+  type AnalysisInput,
   type ImageProject,
   type ImagePlatform,
   type ImageProjectInput,
@@ -57,6 +62,7 @@ type DashboardClientProps = {
   initialThemes: Theme[];
   initialContentItems: ContentItem[];
   initialImageProjects: ImageProject[];
+  initialAnalysisItems: Analysis[];
   initialError?: string;
   userEmail?: string | null;
 };
@@ -65,6 +71,7 @@ type BackupData = {
   themes: Theme[];
   contentItems: ContentItem[];
   imageProjects?: ImageProject[];
+  analysisItems?: Analysis[];
 };
 
 type DashboardSection =
@@ -74,6 +81,8 @@ type DashboardSection =
   | "images"
   | "lives"
   | "calendar"
+  | "analysis"
+  | "data"
   | "status";
 
 type CalendarDay = {
@@ -95,6 +104,8 @@ const navItems: { value: DashboardSection; label: string; description: string }[
   { value: "images", label: "画像エディタ", description: "カルーセル" },
   { value: "lives", label: "ライブ配信", description: "週2本管理" },
   { value: "calendar", label: "カレンダー", description: "投稿予定" },
+  { value: "analysis", label: "分析管理", description: "投稿後の数値" },
+  { value: "data", label: "データ管理", description: "JSON保存" },
   { value: "status", label: "投稿管理", description: "一覧・状態" }
 ];
 
@@ -150,6 +161,35 @@ const emptyImageProjectForm: ImageProjectInput = {
   slides: [],
   colorTheme: "korean_pink",
   memo: ""
+};
+
+const emptyAnalysisForm: AnalysisInput = {
+  contentItemId: "",
+  contentTitle: "",
+  platform: "instagram",
+  impressions: 0,
+  reach: 0,
+  views: 0,
+  averageViewDuration: 0,
+  livePeakViewers: 0,
+  liveChatCount: 0,
+  likes: 0,
+  comments: 0,
+  saves: 0,
+  shares: 0,
+  follows: 0,
+  profileAccess: 0,
+  linkClicks: 0,
+  lineRegistrations: 0,
+  conversions: 0,
+  saveRate: 0,
+  engagementRate: 0,
+  followConversionRate: 0,
+  lineRegistrationRate: 0,
+  goodPoint: "",
+  improvementPoint: "",
+  nextAction: "",
+  analyzedAt: new Date().toISOString().slice(0, 10)
 };
 
 function localId(prefix: string) {
@@ -698,6 +738,38 @@ function parseLivePlanFromItem(item: ContentItem, theme?: Theme) {
   return parseLivePlan(contentItemToInput(item), theme);
 }
 
+function rate(part?: number, total?: number) {
+  if (!part || !total) {
+    return 0;
+  }
+
+  return Math.round((part / total) * 10000) / 100;
+}
+
+function withCalculatedAnalysis(input: AnalysisInput): AnalysisInput {
+  const reach = input.reach || input.views || input.impressions || 0;
+  const engagement =
+    (input.likes ?? 0) + (input.comments ?? 0) + (input.saves ?? 0) + (input.shares ?? 0);
+
+  return {
+    ...input,
+    saveRate: rate(input.saves, reach),
+    engagementRate: rate(engagement, reach),
+    followConversionRate: rate(input.follows, reach),
+    lineRegistrationRate: rate(input.lineRegistrations, reach)
+  };
+}
+
+function downloadJson(filename: string, value: unknown) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function readBackup() {
   if (typeof window === "undefined") {
     return undefined;
@@ -720,24 +792,33 @@ export function DashboardClient({
   initialThemes,
   initialContentItems,
   initialImageProjects,
+  initialAnalysisItems,
   initialError,
   userEmail
 }: DashboardClientProps) {
   const shouldUseBackup =
-    initialThemes.length === 0 && initialContentItems.length === 0 && initialImageProjects.length === 0;
+    initialThemes.length === 0 &&
+    initialContentItems.length === 0 &&
+    initialImageProjects.length === 0 &&
+    initialAnalysisItems.length === 0;
   const backup = shouldUseBackup ? readBackup() : undefined;
   const [themes, setThemes] = useState(backup?.themes ?? initialThemes);
   const [contentItems, setContentItems] = useState(backup?.contentItems ?? initialContentItems);
   const [imageProjects, setImageProjects] = useState(
     backup?.imageProjects ?? initialImageProjects
   );
+  const [analysisItems, setAnalysisItems] = useState(
+    backup?.analysisItems ?? initialAnalysisItems
+  );
   const [themeForm, setThemeForm] = useState<ThemeInput>(emptyThemeForm);
   const [contentForm, setContentForm] = useState<ContentItemInput>(emptyContentForm);
   const [imageProjectForm, setImageProjectForm] =
     useState<ImageProjectInput>(emptyImageProjectForm);
+  const [analysisForm, setAnalysisForm] = useState<AnalysisInput>(emptyAnalysisForm);
   const [editingThemeId, setEditingThemeId] = useState<string | null>(null);
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
   const [editingImageProjectId, setEditingImageProjectId] = useState<string | null>(null);
+  const [editingAnalysisId, setEditingAnalysisId] = useState<string | null>(null);
   const [creatingImageForContentId, setCreatingImageForContentId] = useState<string | null>(null);
   const [generatingThemeId, setGeneratingThemeId] = useState<string | null>(null);
   const [scheduleMonth, setScheduleMonth] = useState(() => formatMonthInput(new Date()));
@@ -758,8 +839,11 @@ export function DashboardClient({
       return;
     }
 
-    localStorage.setItem(backupKey, JSON.stringify({ themes, contentItems, imageProjects }));
-  }, [contentItems, imageProjects, themes]);
+    localStorage.setItem(
+      backupKey,
+      JSON.stringify({ themes, contentItems, imageProjects, analysisItems })
+    );
+  }, [analysisItems, contentItems, imageProjects, themes]);
 
   const currentWeekTheme = themes.find((theme) => theme.status === "active") ?? themes[0];
   const selectedLiveTheme =
@@ -778,14 +862,18 @@ export function DashboardClient({
       imageWaiting: imageProjects.filter((project) =>
         ["idea", "prompt_ready", "generating", "review"].includes(project.status)
       ).length,
-      analysisWaiting: countByStatus("published"),
+      analysisWaiting: contentItems.filter(
+        (item) =>
+          item.status === "published" &&
+          !analysisItems.some((analysis) => analysis.contentItemId === item.id)
+      ).length,
       liveSchedules: contentItems.filter((item) => item.platform === "youtube_live").slice(0, 3),
       upcoming: contentItems
         .filter((item) => item.scheduledDate)
         .sort((a, b) => (a.scheduledDate ?? "").localeCompare(b.scheduledDate ?? ""))
         .slice(0, 5)
     };
-  }, [contentItems, imageProjects]);
+  }, [analysisItems, contentItems, imageProjects]);
 
   const platformCounts = useMemo(() => {
     return platformOptions.map((platform) => ({
@@ -953,6 +1041,54 @@ export function DashboardClient({
     setImageProjectForm((form) => ({ ...form, ...input }));
   }
 
+  function updateAnalysisForm(input: Partial<AnalysisInput>) {
+    setAnalysisForm((form) => withCalculatedAnalysis({ ...form, ...input }));
+  }
+
+  function selectAnalysis(analysis: Analysis) {
+    setActiveSection("analysis");
+    setEditingAnalysisId(analysis.id);
+    setAnalysisForm(
+      withCalculatedAnalysis({
+        userId: analysis.userId,
+        contentItemId: analysis.contentItemId,
+        contentTitle: analysis.contentTitle ?? "",
+        platform: analysis.platform,
+        impressions: analysis.impressions ?? 0,
+        reach: analysis.reach ?? 0,
+        views: analysis.views ?? 0,
+        averageViewDuration: analysis.averageViewDuration ?? 0,
+        livePeakViewers: analysis.livePeakViewers ?? 0,
+        liveChatCount: analysis.liveChatCount ?? 0,
+        likes: analysis.likes ?? 0,
+        comments: analysis.comments ?? 0,
+        saves: analysis.saves ?? 0,
+        shares: analysis.shares ?? 0,
+        follows: analysis.follows ?? 0,
+        profileAccess: analysis.profileAccess ?? 0,
+        linkClicks: analysis.linkClicks ?? 0,
+        lineRegistrations: analysis.lineRegistrations ?? 0,
+        conversions: analysis.conversions ?? 0,
+        saveRate: analysis.saveRate ?? 0,
+        engagementRate: analysis.engagementRate ?? 0,
+        followConversionRate: analysis.followConversionRate ?? 0,
+        lineRegistrationRate: analysis.lineRegistrationRate ?? 0,
+        goodPoint: analysis.goodPoint ?? "",
+        improvementPoint: analysis.improvementPoint ?? "",
+        nextAction: analysis.nextAction ?? "",
+        analyzedAt: analysis.analyzedAt ?? new Date().toISOString().slice(0, 10)
+      })
+    );
+  }
+
+  function resetAnalysisForm() {
+    setEditingAnalysisId(null);
+    setAnalysisForm({
+      ...emptyAnalysisForm,
+      analyzedAt: new Date().toISOString().slice(0, 10)
+    });
+  }
+
   function submitTheme() {
     startTransition(async () => {
       const input = {
@@ -1109,6 +1245,55 @@ export function DashboardClient({
       }
 
       resetImageProjectForm();
+    });
+  }
+
+  function submitAnalysis() {
+    startTransition(async () => {
+      const selectedContent = contentItems.find((item) => item.id === analysisForm.contentItemId);
+      const input = withCalculatedAnalysis({
+        ...analysisForm,
+        contentTitle: selectedContent?.title ?? analysisForm.contentTitle,
+        platform: selectedContent?.platform ?? analysisForm.platform
+      });
+
+      if (!input.contentItemId) {
+        setNotice("分析する投稿を選んでください。");
+        return;
+      }
+
+      if (editingAnalysisId) {
+        const result = await updateAnalysisAction(editingAnalysisId, input);
+        const updatedAnalysis =
+          result.data ??
+          ({
+            ...analysisItems.find((analysis) => analysis.id === editingAnalysisId),
+            ...input,
+            updatedAt: nowIso()
+          } as Analysis);
+
+        setAnalysisItems((current) =>
+          current.map((analysis) =>
+            analysis.id === editingAnalysisId ? updatedAnalysis : analysis
+          )
+        );
+        setNotice(result.ok ? "分析結果をNotionに保存しました。" : `分析結果をブラウザ内に保存しました。${result.error}`);
+      } else {
+        const result = await saveAnalysisAction(input);
+        const createdAnalysis =
+          result.data ??
+          ({
+            ...input,
+            id: localId("analysis"),
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          } satisfies Analysis);
+
+        setAnalysisItems((current) => [createdAnalysis, ...current]);
+        setNotice(result.ok ? "分析結果をNotionに保存しました。" : `分析結果をブラウザ内に保存しました。${result.error}`);
+      }
+
+      resetAnalysisForm();
     });
   }
 
@@ -1297,6 +1482,58 @@ export function DashboardClient({
         setNotice(`削除できませんでした。${result.error}`);
       }
     });
+  }
+
+  function removeAnalysis(id: string) {
+    if (!confirm("この分析結果を削除しますか？ Notion上ではアーカイブされます。")) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = id.startsWith("analysis-") ? { ok: true } : await deleteAnalysisAction(id);
+
+      if (result.ok) {
+        setAnalysisItems((current) => current.filter((analysis) => analysis.id !== id));
+        setNotice("分析結果を削除しました。");
+      } else {
+        setNotice(`分析結果を削除できませんでした。${result.error}`);
+      }
+    });
+  }
+
+  function exportAllData() {
+    downloadJson(`yuzuki-content-studio-${new Date().toISOString().slice(0, 10)}.json`, {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      themes,
+      contentItems,
+      imageProjects,
+      analysisItems
+    });
+  }
+
+  function importJson(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result ?? "{}")) as Partial<BackupData>;
+        setThemes(Array.isArray(parsed.themes) ? parsed.themes : []);
+        setContentItems(Array.isArray(parsed.contentItems) ? parsed.contentItems : []);
+        setImageProjects(Array.isArray(parsed.imageProjects) ? parsed.imageProjects : []);
+        setAnalysisItems(Array.isArray(parsed.analysisItems) ? parsed.analysisItems : []);
+        setNotice("JSONをブラウザ内に読み込みました。Notionへ反映したい場合は、各画面で保存してください。");
+      } catch {
+        setNotice("JSONの読み込みに失敗しました。ファイルの形式を確認してください。");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
   }
 
   function createSampleData() {
@@ -1560,7 +1797,7 @@ export function DashboardClient({
       <div className="flex min-w-0 flex-1 flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 rounded-lg border border-white/70 bg-white/68 p-6 shadow-soft backdrop-blur md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-medium text-champagne">Phase 6-7</p>
+          <p className="text-sm font-medium text-champagne">Phase 8-10</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-ink">
             Yuzuki Content Studio
           </h1>
@@ -2353,6 +2590,191 @@ export function DashboardClient({
               </article>
             ))
           )}
+        </div>
+      </Panel>
+      ) : null}
+
+      {activeSection === "analysis" ? (
+      <Panel title="分析管理">
+        <div className="grid gap-3 md:grid-cols-3">
+          <SelectSimpleField
+            label="分析する投稿"
+            value={analysisForm.contentItemId}
+            options={contentItems.map((item) => ({ value: item.id, label: item.title }))}
+            onChange={(value) => {
+              const item = contentItems.find((contentItem) => contentItem.id === value);
+              updateAnalysisForm({
+                contentItemId: value,
+                contentTitle: item?.title ?? "",
+                platform: item?.platform ?? analysisForm.platform
+              });
+            }}
+          />
+          <SelectField
+            label="媒体"
+            value={analysisForm.platform}
+            options={platformOptions}
+            onChange={(value) => updateAnalysisForm({ platform: value as Platform })}
+          />
+          <TextField
+            label="分析日"
+            type="date"
+            value={analysisForm.analyzedAt ?? ""}
+            onChange={(value) => updateAnalysisForm({ analyzedAt: value })}
+          />
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {[
+            ["表示回数", "impressions"],
+            ["リーチ", "reach"],
+            ["再生数", "views"],
+            ["平均視聴秒数", "averageViewDuration"],
+            ["ライブ最大同接", "livePeakViewers"],
+            ["ライブコメント数", "liveChatCount"],
+            ["いいね", "likes"],
+            ["コメント", "comments"],
+            ["保存", "saves"],
+            ["シェア", "shares"],
+            ["フォロー増", "follows"],
+            ["プロフィールアクセス", "profileAccess"],
+            ["リンククリック", "linkClicks"],
+            ["LINE登録", "lineRegistrations"],
+            ["成約", "conversions"]
+          ].map(([label, key]) => (
+            <TextField
+              key={key}
+              label={label}
+              type="number"
+              value={String((analysisForm[key as keyof AnalysisInput] as number | undefined) ?? 0)}
+              onChange={(value) => updateAnalysisForm({ [key]: Number(value) || 0 } as Partial<AnalysisInput>)}
+            />
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <MetricCard label="保存率" value={`${analysisForm.saveRate ?? 0}%`} />
+          <MetricCard label="反応率" value={`${analysisForm.engagementRate ?? 0}%`} />
+          <MetricCard label="フォロー転換率" value={`${analysisForm.followConversionRate ?? 0}%`} />
+          <MetricCard label="LINE登録率" value={`${analysisForm.lineRegistrationRate ?? 0}%`} />
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <TextAreaField
+            label="良かった点"
+            value={analysisForm.goodPoint ?? ""}
+            onChange={(value) => updateAnalysisForm({ goodPoint: value })}
+          />
+          <TextAreaField
+            label="改善点"
+            value={analysisForm.improvementPoint ?? ""}
+            onChange={(value) => updateAnalysisForm({ improvementPoint: value })}
+          />
+          <TextAreaField
+            label="次のアクション"
+            value={analysisForm.nextAction ?? ""}
+            onChange={(value) => updateAnalysisForm({ nextAction: value })}
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={submitAnalysis}
+            disabled={isPending}
+            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {editingAnalysisId ? "分析を保存" : "分析を追加"}
+          </button>
+          <button
+            type="button"
+            onClick={resetAnalysisForm}
+            className="rounded-md border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-ink"
+          >
+            入力をリセット
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {analysisItems.length === 0 ? (
+            <p className="text-sm text-stone-500">分析結果はまだありません。</p>
+          ) : (
+            analysisItems.map((analysis) => (
+              <article key={analysis.id} className="rounded-lg border border-stone-200 bg-white/72 p-4">
+                <p className="text-xs text-stone-500">
+                  {labelFor(platformOptions, analysis.platform)} / {analysis.analyzedAt ?? "日付未設定"}
+                </p>
+                <h3 className="mt-1 text-base font-semibold text-ink">
+                  {analysis.contentTitle || "投稿分析"}
+                </h3>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-stone-600">
+                  <span>保存率 {analysis.saveRate ?? 0}%</span>
+                  <span>反応率 {analysis.engagementRate ?? 0}%</span>
+                  <span>LINE {analysis.lineRegistrationRate ?? 0}%</span>
+                  <span>成約 {analysis.conversions ?? 0}</span>
+                </div>
+                <p className="mt-3 line-clamp-2 text-sm text-stone-600">
+                  {analysis.nextAction || analysis.improvementPoint || "次の改善メモを残せます。"}
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => selectAnalysis(analysis)}
+                    className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+                  >
+                    編集
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeAnalysis(analysis.id)}
+                    className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700"
+                  >
+                    削除
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </Panel>
+      ) : null}
+
+      {activeSection === "data" ? (
+      <Panel title="データ管理">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+            <h3 className="text-base font-semibold text-ink">JSONエクスポート</h3>
+            <p className="mt-2 text-sm leading-6 text-stone-600">
+              テーマ、投稿、画像プロジェクト、ライブ企画、分析結果をまとめてJSONで保存します。
+            </p>
+            <button
+              type="button"
+              onClick={exportAllData}
+              className="mt-4 rounded-md bg-ink px-4 py-2 text-sm font-medium text-white"
+            >
+              全データを書き出し
+            </button>
+          </div>
+
+          <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+            <h3 className="text-base font-semibold text-ink">JSONインポート</h3>
+            <p className="mt-2 text-sm leading-6 text-stone-600">
+              書き出したJSONをブラウザ内に読み込みます。Notionへ反映する前の確認用です。
+            </p>
+            <input
+              type="file"
+              accept="application/json"
+              onChange={importJson}
+              className="mt-4 block w-full text-sm text-stone-600"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <MetricCard label="テーマ" value={themes.length.toString()} />
+          <MetricCard label="投稿" value={contentItems.length.toString()} />
+          <MetricCard label="画像" value={imageProjects.length.toString()} />
+          <MetricCard label="分析" value={analysisItems.length.toString()} />
         </div>
       </Panel>
       ) : null}

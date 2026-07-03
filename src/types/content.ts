@@ -48,6 +48,40 @@ export type ImageProjectStatus =
   | "published"
   | "rejected";
 
+export type Analysis = {
+  id: string;
+  notionPageId?: string;
+  userId?: string;
+  contentItemId: string;
+  contentTitle?: string;
+  platform: Platform;
+  impressions?: number;
+  reach?: number;
+  views?: number;
+  averageViewDuration?: number;
+  livePeakViewers?: number;
+  liveChatCount?: number;
+  likes?: number;
+  comments?: number;
+  saves?: number;
+  shares?: number;
+  follows?: number;
+  profileAccess?: number;
+  linkClicks?: number;
+  lineRegistrations?: number;
+  conversions?: number;
+  saveRate?: number;
+  engagementRate?: number;
+  followConversionRate?: number;
+  lineRegistrationRate?: number;
+  goodPoint?: string;
+  improvementPoint?: string;
+  nextAction?: string;
+  analyzedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ImagePlatform = "instagram_carousel" | "x_images" | "threads_images";
 
 export type OutputPreset = {
@@ -220,6 +254,8 @@ export type ThemeInput = Omit<Theme, "id" | "notionPageId" | "createdAt" | "upda
 export type ContentItemInput = Omit<ContentItem, "id" | "notionPageId" | "createdAt" | "updatedAt">;
 
 export type ImageProjectInput = Omit<ImageProject, "id" | "notionPageId" | "createdAt" | "updatedAt">;
+
+export type AnalysisInput = Omit<Analysis, "id" | "notionPageId" | "createdAt" | "updatedAt">;
 
 export type SelectOption<T extends string> = {
   value: T;

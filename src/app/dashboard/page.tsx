@@ -22,6 +22,7 @@ export default async function DashboardPage() {
         initialThemes={result.data?.themes ?? []}
         initialContentItems={result.data?.contentItems ?? []}
         initialImageProjects={result.data?.imageProjects ?? []}
+        initialAnalysisItems={result.data?.analysisItems ?? []}
         initialError={result.ok ? undefined : result.error}
         userEmail={user?.email}
       />
