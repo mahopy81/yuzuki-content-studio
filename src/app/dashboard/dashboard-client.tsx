@@ -442,6 +442,10 @@ function formatForImageType(imageType: ImageProjectType) {
     return "9:16 / 1080x1920";
   }
 
+  if (imageType === "instagram_carousel_design") {
+    return "4:5 / 1080x1350";
+  }
+
   if (imageType === "x_image") {
     return "16:9";
   }
@@ -517,6 +521,236 @@ function createTextElement(
     borderRadius: type === "cta" ? 28 : 0,
     zIndex
   };
+}
+
+function createShapeElement(
+  name: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  backgroundColor: string,
+  borderRadius: number,
+  zIndex: number
+): SlideElement {
+  return {
+    id: localId("element"),
+    type: "shape",
+    name,
+    visible: true,
+    x,
+    y,
+    width,
+    height,
+    backgroundColor,
+    borderRadius,
+    zIndex
+  };
+}
+
+type CarouselSourceSlide = {
+  type?: string;
+  templateType?: SlideTemplateType;
+  label?: string;
+  title?: string;
+  subtitle?: string;
+  body?: string;
+  point?: string;
+  note?: string;
+  cta?: string;
+  items?: string[];
+};
+
+type CarouselSource = {
+  brand?: string;
+  theme?: string;
+  title?: string;
+  slides?: CarouselSourceSlide[];
+};
+
+function parseCarouselSource(contentItem?: ContentItem, theme?: Theme): CarouselSource | undefined {
+  if (!contentItem || contentItem.contentType !== "instagram_carousel") {
+    return undefined;
+  }
+
+  if (!contentItem.body?.trim()) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(contentItem.body) as CarouselSource;
+
+    if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
+      return {
+        ...parsed,
+        brand: parsed.brand || "Yuzuki｜心響学×AIフリーランス",
+        theme: parsed.theme || theme?.mainTheme || parsed.title || contentItem.title
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function templateForCarouselSlide(source: CarouselSourceSlide, index: number, total: number): SlideTemplateType {
+  if (index === 0) {
+    return "cover";
+  }
+
+  if (index === total - 1) {
+    return "thanks";
+  }
+
+  const requested = source.templateType ?? (source.type as SlideTemplateType | undefined);
+
+  if (requested && slideTemplateOptions.some((option) => option.value === requested)) {
+    return requested;
+  }
+
+  const pattern: SlideTemplateType[] = ["text", "roadmap", "tips", "mistake", "summary"];
+  return pattern[Math.min(index - 1, pattern.length - 1)] ?? "text";
+}
+
+function buildPinkCarouselSlide({
+  source,
+  index,
+  total,
+  brand,
+  themeTitle
+}: {
+  source: CarouselSourceSlide;
+  index: number;
+  total: number;
+  brand: string;
+  themeTitle: string;
+}): Slide {
+  const templateType = templateForCarouselSlide(source, index, total);
+  const label = source.label || String(index + 1).padStart(2, "0");
+  const title = source.title || themeTitle;
+  const body = source.body || source.note || "";
+  const point = source.point || source.cta || source.note || "";
+  const elements: SlideElement[] = [
+    createTextElement("ブランド", brand, 92, 78, 620, 28, 3),
+    createTextElement("ページ番号", `${label} / ${String(total).padStart(2, "0")}`, 820, 78, 170, 26, 3),
+    createTextElement("NEXT", index === total - 1 ? "SAVE" : "NEXT →", 790, 1230, 190, 30, 3),
+    createTextElement("フッター", "♡ いいね・コメント・シェア嬉しいです！", 96, 1248, 560, 26, 3)
+  ];
+
+  if (templateType === "cover") {
+    elements.push(
+      createShapeElement("見出しカード", 90, 210, 900, 520, "rgba(255,255,255,0.82)", 42, 1),
+      createTextElement("ラベル", source.label || "月5万！", 175, 260, 240, 40, 3),
+      createTextElement("タイトル", title, 160, 360, 760, 76, 4),
+      createTextElement("サブタイトル", source.subtitle || body || "3ヶ月で初案件まで", 205, 620, 670, 38, 4),
+      createShapeElement("ポイントカード", 145, 805, 790, 220, "rgba(255,255,255,0.76)", 34, 1),
+      createTextElement("ポイント", point || "初心者でも小さく始められるAI副業ロードマップ", 190, 875, 700, 34, 4),
+      createTextElement("装飾ハート", "♡", 850, 245, 70, 64, 5)
+    );
+  } else if (templateType === "roadmap") {
+    elements.push(createTextElement("タイトル", title, 120, 190, 840, 58, 4));
+    ["1ヶ月目", "2ヶ月目", "3ヶ月目"].forEach((month, monthIndex) => {
+      const y = 360 + monthIndex * 220;
+      const monthBody = (
+        source.items?.[monthIndex] ||
+        body ||
+        point ||
+        "やることを小さく分けて進める"
+      ).replace(/^[-・\s]+/, "");
+
+      elements.push(
+        createShapeElement(`${month}カード`, 115, y, 850, 165, "rgba(255,255,255,0.82)", 30, 1),
+        createTextElement(month, month, 160, y + 55, 180, 34, 4),
+        createTextElement(`${month}本文`, monthBody, 360, y + 45, 520, 30, 4)
+      );
+    });
+    elements.push(createTextElement("ポイント", point || "月ごとに分けると迷わず進めます", 165, 1070, 750, 34, 4));
+  } else if (templateType === "tips") {
+    const items = source.items && source.items.length > 0 ? source.items : body.split(/[。\n]/).filter(Boolean).slice(0, 4);
+    elements.push(createTextElement("タイトル", title, 120, 180, 840, 56, 4));
+    items.slice(0, 4).forEach((item, itemIndex) => {
+      const y = 335 + itemIndex * 165;
+      elements.push(
+        createShapeElement(`チェック${itemIndex + 1}`, 125, y, 830, 115, "rgba(255,255,255,0.82)", 28, 1),
+        createTextElement(`チェック記号${itemIndex + 1}`, "✓", 165, y + 53, 70, 40, 4),
+        createTextElement(`チェック本文${itemIndex + 1}`, item.trim(), 250, y + 43, 620, 30, 4)
+      );
+    });
+    elements.push(createTextElement("ポイント", point || "できたところからチェックして進めよう", 155, 1090, 780, 34, 4));
+  } else if (templateType === "mistake") {
+    elements.push(
+      createTextElement("タイトル", title, 120, 180, 840, 56, 4),
+      createShapeElement("NGカード", 120, 360, 840, 250, "rgba(255,255,255,0.82)", 34, 1),
+      createTextElement("NG", "× NG", 170, 430, 180, 44, 4),
+      createTextElement("NG本文", body || "完璧に準備してから始めようとして止まる", 330, 425, 520, 34, 4),
+      createShapeElement("OKカード", 120, 690, 840, 250, "rgba(255,255,255,0.82)", 34, 1),
+      createTextElement("OK", "✓ OK", 170, 760, 180, 44, 4),
+      createTextElement("OK本文", point || "小さく試して反応を見ながら改善する", 330, 755, 520, 34, 4)
+    );
+  } else if (templateType === "thanks") {
+    elements.push(
+      createTextElement("Thank you", "Thank you", 185, 185, 710, 90, 4),
+      createTextElement("サブコピー", "最後まで読んでくれてありがとう♡", 195, 330, 690, 34, 4),
+      createShapeElement("プロフィールカード", 145, 500, 790, 390, "rgba(255,255,255,0.82)", 42, 1),
+      createTextElement("プロフィール名", "Yuzuki", 230, 585, 620, 48, 4),
+      createTextElement("プロフィール本文", body || point || "ゆるふわな理想を、AIと心理学でロジックに変える。", 230, 680, 620, 34, 4),
+      createTextElement("フォロー", "← FOLLOW", 335, 1010, 410, 46, 4)
+    );
+  } else {
+    elements.push(
+      createTextElement("タイトル", title, 110, 185, 860, 58, 4),
+      createShapeElement("本文カード", 105, 390, 870, 460, "rgba(255,255,255,0.84)", 36, 1),
+      createTextElement("本文", body || "ここに本文が入ります。読者の悩みと解決策を、読みやすく短くまとめます。", 165, 475, 750, 36, 4),
+      createShapeElement("マーカー", 145, 915, 790, 155, "rgba(255,225,239,0.86)", 32, 1),
+      createTextElement("ポイント", point || "今日できる一手をひとつ決めよう", 185, 980, 700, 32, 4)
+    );
+  }
+
+  return {
+    id: localId("slide"),
+    templateType,
+    title,
+    backgroundColor: "#fff7fb",
+    colorTheme: "yuzuki_pink_grid",
+    elements: elements.map((element) => ({
+      ...element,
+      color:
+        element.name === "タイトル" || element.name === "Thank you" || element.name === "フォロー"
+          ? "#ff5faf"
+          : element.name.includes("NG")
+            ? "#d65a6f"
+            : element.name.includes("OK") || element.name.includes("チェック記号")
+              ? "#62a681"
+              : "#8b5f6d",
+      fontWeight:
+        element.name === "本文" || element.name.includes("本文") || element.name === "フッター"
+          ? "normal"
+          : "bold",
+      lineHeight: element.lineHeight ?? 1.5
+    }))
+  };
+}
+
+function createPinkCarouselSlides(contentItem?: ContentItem, theme?: Theme): Slide[] | undefined {
+  const source = parseCarouselSource(contentItem, theme);
+
+  if (!source?.slides?.length) {
+    return undefined;
+  }
+
+  const slides = source.slides.slice(0, 10);
+  const total = slides.length;
+
+  return slides.map((slide, index) =>
+    buildPinkCarouselSlide({
+      source: slide,
+      index,
+      total,
+      brand: source.brand || "Yuzuki｜心響学×AIフリーランス",
+      themeTitle: source.theme || contentItem?.title || "Instagramカルーセル"
+    })
+  );
 }
 
 function createDefaultSlides({
@@ -640,6 +874,10 @@ function slideToSvg(slide: Slide, preset = outputPresets[0]) {
   const sortedElements = [...slide.elements]
     .filter((element) => element.visible)
     .sort((a, b) => a.zIndex - b.zIndex);
+  const isPinkCarousel = slide.colorTheme === "yuzuki_pink_grid";
+  const backgroundSvg = isPinkCarousel
+    ? `<defs><pattern id="pink-grid" width="155" height="155" patternUnits="userSpaceOnUse"><path d="M 155 0 L 0 0 0 155" fill="none" stroke="#ffc2dc" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#fff7fb" /><rect width="100%" height="100%" fill="url(#pink-grid)" opacity="0.82" /><circle cx="905" cy="190" r="58" fill="none" stroke="#ffb5d5" stroke-width="5" opacity="0.65"/><path d="M154 1116 C184 1078 231 1084 244 1126 C259 1084 313 1078 338 1118 C361 1156 320 1204 244 1244 C171 1204 128 1154 154 1116Z" fill="#ffe1ef" opacity="0.58"/><path d="M838 1142 C920 1128 954 1160 982 1210" fill="none" stroke="#ff8fbd" stroke-width="8" stroke-linecap="round" opacity="0.68"/>`
+    : `<rect width="100%" height="100%" fill="${slide.backgroundColor}" />`;
   const elementSvg = sortedElements
     .map((element) => {
       if (element.type === "shape") {
@@ -672,7 +910,7 @@ function slideToSvg(slide: Slide, preset = outputPresets[0]) {
     })
     .join("");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${preset.width}" height="${preset.height}" viewBox="0 0 ${preset.width} ${preset.height}"><rect width="100%" height="100%" fill="${slide.backgroundColor}" />${elementSvg}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${preset.width}" height="${preset.height}" viewBox="0 0 ${preset.width} ${preset.height}">${backgroundSvg}${elementSvg}</svg>`;
 }
 
 function downloadSlideAsPng(slide: Slide, preset = outputPresets[0]) {
@@ -1311,6 +1549,7 @@ export function DashboardClient({
 
       if (imageProject) {
         const imageType = imageProject.imageType ?? imageTypeForContent(contentItem);
+        const carouselSlides = createPinkCarouselSlides(contentItem, theme);
         const editorInput = ensureImageProjectEditor({
           ...imageProject,
           imagePlatform: imageProject.imagePlatform ?? imagePlatformForType(imageType),
@@ -1318,13 +1557,15 @@ export function DashboardClient({
           slides:
             imageProject.slides && imageProject.slides.length > 0
               ? imageProject.slides
-              : createDefaultSlides({
-                  title: contentItem.title,
-                  body: buildImagePrompt(contentItem, theme),
-                  cta: theme?.cta,
-                  platform: imagePlatformForType(imageType),
-                  colorTheme: imageProject.colorTheme ?? "korean_pink"
-                })
+              : carouselSlides ??
+                createDefaultSlides({
+                    title: contentItem.title,
+                    body: buildImagePrompt(contentItem, theme),
+                    cta: theme?.cta,
+                    platform: imagePlatformForType(imageType),
+                    colorTheme: imageProject.colorTheme ?? "korean_pink"
+                  }),
+          colorTheme: carouselSlides ? "yuzuki_pink_grid" : imageProject.colorTheme ?? "korean_pink"
         });
         const editorProject: ImageProject = {
           ...imageProject,
@@ -1345,6 +1586,7 @@ export function DashboardClient({
       }
 
       const imageType = imageTypeForContent(contentItem);
+      const carouselSlides = createPinkCarouselSlides(contentItem, theme);
       const localProject: ImageProject = {
         ...emptyImageProjectForm,
         id: localId("image"),
@@ -1361,14 +1603,16 @@ export function DashboardClient({
         negativePrompt: "文字が多すぎる、読みにくい、暗すぎる、過度な装飾、低解像度",
         imagePlatform: imagePlatformForType(imageType),
         outputPreset: presetForPlatform(imagePlatformForType(imageType)),
-        slides: createDefaultSlides({
-          title: contentItem.title,
-          body: buildImagePrompt(contentItem, theme),
-          cta: theme?.cta,
-          platform: imagePlatformForType(imageType),
-          colorTheme: "korean_pink"
-        }),
-        colorTheme: "korean_pink",
+        slides:
+          carouselSlides ??
+          createDefaultSlides({
+            title: contentItem.title,
+            body: buildImagePrompt(contentItem, theme),
+            cta: theme?.cta,
+            platform: imagePlatformForType(imageType),
+            colorTheme: "korean_pink"
+          }),
+        colorTheme: carouselSlides ? "yuzuki_pink_grid" : "korean_pink",
         memo: `Notion保存に失敗したためローカル作成: ${result.error ?? ""}`,
         createdAt: nowIso(),
         updatedAt: nowIso()
@@ -2536,6 +2780,7 @@ export function DashboardClient({
               const selectedContent = contentItems.find((item) => item.id === value);
               const selectedTheme = themes.find((theme) => theme.id === selectedContent?.themeId);
               const imageType = imageTypeForContent(selectedContent);
+              const carouselSlides = createPinkCarouselSlides(selectedContent, selectedTheme);
 
               updateImageProjectForm({
                 contentItemId: value,
@@ -2549,13 +2794,16 @@ export function DashboardClient({
                 title: selectedContent ? `${selectedContent.title} 画像案` : imageProjectForm.title,
                 format: formatForImageType(imageType),
                 prompt: buildImagePrompt(selectedContent, selectedTheme),
-                slides: createDefaultSlides({
-                  title: selectedContent?.title ?? "画像プロジェクト",
-                  body: buildImagePrompt(selectedContent, selectedTheme),
-                  cta: selectedTheme?.cta,
-                  platform: imagePlatformForType(imageType),
-                  colorTheme: imageProjectForm.colorTheme ?? "korean_pink"
-                }),
+                slides:
+                  carouselSlides ??
+                  createDefaultSlides({
+                    title: selectedContent?.title ?? "画像プロジェクト",
+                    body: buildImagePrompt(selectedContent, selectedTheme),
+                    cta: selectedTheme?.cta,
+                    platform: imagePlatformForType(imageType),
+                    colorTheme: imageProjectForm.colorTheme ?? "korean_pink"
+                  }),
+                colorTheme: carouselSlides ? "yuzuki_pink_grid" : imageProjectForm.colorTheme,
                 negativePrompt:
                   imageProjectForm.negativePrompt ||
                   "文字が多すぎる、読みにくい、暗すぎる、過度な装飾、低解像度"
@@ -3308,7 +3556,15 @@ function ImageEditorPanel({
               style={{
                 width: preset.width * editorPreviewScale,
                 height: preset.height * editorPreviewScale,
-                backgroundColor: selectedSlide.backgroundColor
+                backgroundColor: selectedSlide.backgroundColor,
+                backgroundImage:
+                  selectedSlide.colorTheme === "yuzuki_pink_grid"
+                    ? "linear-gradient(#ffc2dc 1px, transparent 1px), linear-gradient(90deg, #ffc2dc 1px, transparent 1px)"
+                    : undefined,
+                backgroundSize:
+                  selectedSlide.colorTheme === "yuzuki_pink_grid"
+                    ? `${155 * editorPreviewScale}px ${155 * editorPreviewScale}px`
+                    : undefined
               }}
             >
               {showSafeArea ? (
@@ -3365,7 +3621,8 @@ function ImageEditorPanel({
                         fontSize: (element.fontSize ?? 32) * editorPreviewScale,
                         lineHeight: element.lineHeight ?? 1.35,
                         fontWeight: element.fontWeight,
-                        textAlign: element.textAlign
+                        textAlign: element.textAlign,
+                        whiteSpace: "pre-line"
                       }}
                     >
                       {element.content}

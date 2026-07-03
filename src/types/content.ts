@@ -95,14 +95,18 @@ export type SlideElementType = "text" | "image" | "shape" | "cta";
 
 export type SlideTemplateType =
   | "cover"
+  | "text"
   | "problem"
   | "deep_pain"
   | "reason"
   | "solution"
+  | "roadmap"
+  | "tips"
   | "steps"
   | "example"
   | "mistake"
   | "summary"
+  | "thanks"
   | "cta";
 
 export type SlideElement = {
@@ -342,7 +346,7 @@ export const imageProjectStatusOptions: SelectOption<ImageProjectStatus>[] = [
 ];
 
 export const outputPresets: OutputPreset[] = [
-  { platform: "instagram_carousel", width: 1080, height: 1080, maxSlides: 10 },
+  { platform: "instagram_carousel", width: 1080, height: 1350, maxSlides: 10 },
   { platform: "x_images", width: 1600, height: 900, maxSlides: 4 },
   { platform: "threads_images", width: 1080, height: 1350, maxSlides: 4 }
 ];
@@ -355,14 +359,18 @@ export const imagePlatformOptions: SelectOption<ImagePlatform>[] = [
 
 export const slideTemplateOptions: SelectOption<SlideTemplateType>[] = [
   { value: "cover", label: "表紙", notionLabel: "Cover" },
+  { value: "text", label: "本文メイン", notionLabel: "Text" },
   { value: "problem", label: "共感・問題提起", notionLabel: "Problem" },
   { value: "deep_pain", label: "悩みの深掘り", notionLabel: "Deep Pain" },
   { value: "reason", label: "原因・理由", notionLabel: "Reason" },
   { value: "solution", label: "解決策", notionLabel: "Solution" },
+  { value: "roadmap", label: "ロードマップ", notionLabel: "Roadmap" },
+  { value: "tips", label: "チェックリスト", notionLabel: "Tips" },
   { value: "steps", label: "3ステップ解説", notionLabel: "Steps" },
   { value: "example", label: "具体例", notionLabel: "Example" },
   { value: "mistake", label: "よくある失敗", notionLabel: "Mistake" },
   { value: "summary", label: "まとめ", notionLabel: "Summary" },
+  { value: "thanks", label: "Thank you", notionLabel: "Thanks" },
   { value: "cta", label: "CTA", notionLabel: "CTA" }
 ];
 
@@ -374,6 +382,14 @@ export const colorThemeOptions = [
     textColor: "#2f2a2a",
     accentColor: "#d7ad68",
     ctaColor: "#f4c9d4"
+  },
+  {
+    value: "yuzuki_pink_grid",
+    label: "Yuzuki Pink Grid",
+    backgroundColor: "#fff7fb",
+    textColor: "#8b5f6d",
+    accentColor: "#ff8fbd",
+    ctaColor: "#ffe1ef"
   },
   {
     value: "minimal_white",
