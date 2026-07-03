@@ -57,7 +57,15 @@ type BackupData = {
   imageProjects?: ImageProject[];
 };
 
+type CalendarDay = {
+  date: string;
+  day: number;
+  isCurrentMonth: boolean;
+  items: ContentItem[];
+};
+
 const backupKey = "yuzuki-content-studio-phase1";
+const weekdayLabels = ["日", "月", "火", "水", "木", "金", "土"];
 
 const emptyThemeForm: ThemeInput = {
   week: "",
@@ -115,6 +123,64 @@ function localId(prefix: string) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function formatDateInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatMonthInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+
+  return `${year}-${month}`;
+}
+
+function parseMonthInput(month: string) {
+  const [year, monthIndex] = month.split("-").map(Number);
+
+  return new Date(year, (monthIndex || 1) - 1, 1);
+}
+
+function addMonths(month: string, amount: number) {
+  const date = parseMonthInput(month);
+  date.setMonth(date.getMonth() + amount);
+
+  return formatMonthInput(date);
+}
+
+function addDaysFromToday(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+
+  return formatDateInput(date);
+}
+
+function scheduledDateKey(value?: string) {
+  return value ? value.slice(0, 10) : "";
+}
+
+function buildCalendarDays(month: string, items: ContentItem[]): CalendarDay[] {
+  const firstDay = parseMonthInput(month);
+  const calendarStart = new Date(firstDay);
+  calendarStart.setDate(firstDay.getDate() - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + index);
+    const dateKey = formatDateInput(date);
+
+    return {
+      date: dateKey,
+      day: date.getDate(),
+      isCurrentMonth: date.getMonth() === firstDay.getMonth(),
+      items: items.filter((item) => scheduledDateKey(item.scheduledDate) === dateKey)
+    };
+  });
 }
 
 function normalizeTags(value: string) {
@@ -367,6 +433,7 @@ export function DashboardClient({
   const [editingImageProjectId, setEditingImageProjectId] = useState<string | null>(null);
   const [creatingImageForContentId, setCreatingImageForContentId] = useState<string | null>(null);
   const [generatingThemeId, setGeneratingThemeId] = useState<string | null>(null);
+  const [scheduleMonth, setScheduleMonth] = useState(() => formatMonthInput(new Date()));
   const [notice, setNotice] = useState(
     backup
       ? "Notionから読み込めなかったため、ブラウザ内のバックアップを表示しています。"
@@ -412,6 +479,23 @@ export function DashboardClient({
       ...platform,
       count: contentItems.filter((item) => item.platform === platform.value).length
     }));
+  }, [contentItems]);
+
+  const calendarDays = useMemo(
+    () => buildCalendarDays(scheduleMonth, contentItems),
+    [contentItems, scheduleMonth]
+  );
+
+  const scheduledThisMonth = useMemo(() => {
+    return calendarDays
+      .filter((day) => day.isCurrentMonth)
+      .reduce((total, day) => total + day.items.length, 0);
+  }, [calendarDays]);
+
+  const unscheduledItems = useMemo(() => {
+    return contentItems
+      .filter((item) => !item.scheduledDate && item.status !== "published" && item.status !== "analyzed")
+      .slice(0, 8);
   }, [contentItems]);
 
   const selectedContentTheme = themes.find(
@@ -757,6 +841,41 @@ export function DashboardClient({
     });
   }
 
+  function scheduleContentItem(item: ContentItem, scheduledDate: string) {
+    const status: ContentStatus = scheduledDate ? "scheduled" : item.status === "scheduled" ? "drafting" : item.status;
+
+    setContentItems((current) =>
+      current.map((currentItem) =>
+        currentItem.id === item.id
+          ? { ...currentItem, scheduledDate, status, updatedAt: nowIso() }
+          : currentItem
+      )
+    );
+
+    startTransition(async () => {
+      if (item.id.startsWith("content-")) {
+        setNotice("投稿予定をブラウザ内で更新しました。Notion保存前のローカルデータです。");
+        return;
+      }
+
+      const result = await updateContentItemAction(item.id, { scheduledDate, status });
+
+      if (result.data) {
+        setContentItems((current) =>
+          current.map((currentItem) => (currentItem.id === item.id ? result.data! : currentItem))
+        );
+      }
+
+      setNotice(
+        result.ok
+          ? scheduledDate
+            ? "投稿予定をNotionに保存しました。"
+            : "投稿予定を解除しました。"
+          : `投稿予定はローカル更新のみです。${result.error}`
+      );
+    });
+  }
+
   function removeTheme(id: string) {
     if (!confirm("このテーマを削除しますか？ Notion上ではアーカイブされます。")) {
       return;
@@ -878,12 +997,12 @@ export function DashboardClient({
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 rounded-lg border border-white/70 bg-white/68 p-6 shadow-soft backdrop-blur md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-medium text-champagne">Phase 4</p>
+          <p className="text-sm font-medium text-champagne">Phase 5</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-ink">
             Yuzuki Content Studio
           </h1>
           <p className="mt-2 text-sm leading-6 text-stone-600">
-            投稿案と画像制作プロジェクトをまとめて管理し、Notionへ保存できます。
+            投稿案、画像制作、投稿予定をまとめて管理し、Notionへ保存できます。
           </p>
         </div>
         <div className="flex flex-col gap-2 text-sm text-stone-600 md:items-end">
@@ -908,8 +1027,141 @@ export function DashboardClient({
         <MetricCard label="作成中" value={summary.drafting.toString()} />
         <MetricCard label="確認待ち" value={summary.review.toString()} />
         <MetricCard label="予約済み" value={summary.scheduled.toString()} />
-        <MetricCard label="画像制作中" value={summary.imageWaiting.toString()} />
+        <MetricCard label="今月予定" value={scheduledThisMonth.toString()} />
       </section>
+
+      <Panel title="投稿カレンダー">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setScheduleMonth((month) => addMonths(month, -1))}
+              className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+            >
+              前月
+            </button>
+            <input
+              type="month"
+              value={scheduleMonth}
+              onChange={(event) => setScheduleMonth(event.target.value)}
+              className="rounded-md border border-stone-200 bg-white/85 px-3 py-2 text-sm outline-none transition focus:border-champagne"
+            />
+            <button
+              type="button"
+              onClick={() => setScheduleMonth((month) => addMonths(month, 1))}
+              className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+            >
+              翌月
+            </button>
+            <button
+              type="button"
+              onClick={() => setScheduleMonth(formatMonthInput(new Date()))}
+              className="rounded-md border border-champagne/60 bg-rose px-3 py-2 text-xs font-medium text-ink"
+            >
+              今月
+            </button>
+          </div>
+          <p className="text-sm text-stone-600">
+            この月の投稿予定: <strong className="text-ink">{scheduledThisMonth}</strong>件
+          </p>
+        </div>
+
+        <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs font-medium text-stone-500">
+          {weekdayLabels.map((weekday) => (
+            <div key={weekday}>{weekday}</div>
+          ))}
+        </div>
+        <div className="mt-2 grid grid-cols-7 gap-2">
+          {calendarDays.map((day) => (
+            <div
+              key={day.date}
+              className={`min-h-28 rounded-md border p-2 text-left ${
+                day.isCurrentMonth
+                  ? "border-stone-200 bg-white/75"
+                  : "border-stone-100 bg-white/35 text-stone-400"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold">{day.day}</span>
+                {day.items.length > 0 ? (
+                  <span className="rounded-full bg-rose px-2 py-0.5 text-[11px] text-ink">
+                    {day.items.length}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-2 space-y-1">
+                {day.items.slice(0, 3).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => selectContentItem(item)}
+                    className="block w-full rounded-sm bg-white px-2 py-1 text-left text-[11px] leading-4 text-ink shadow-sm"
+                  >
+                    {labelFor(platformOptions, item.platform)} / {item.title}
+                  </button>
+                ))}
+                {day.items.length > 3 ? (
+                  <p className="px-1 text-[11px] text-stone-500">他 {day.items.length - 3}件</p>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 rounded-lg border border-stone-200 bg-white/60 p-4">
+          <h3 className="text-base font-semibold text-ink">未予約の投稿</h3>
+          <div className="mt-3 space-y-2">
+            {unscheduledItems.length === 0 ? (
+              <p className="text-sm text-stone-500">未予約の投稿はありません。</p>
+            ) : (
+              unscheduledItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-col justify-between gap-3 rounded-md border border-stone-100 bg-white/80 px-3 py-3 md:flex-row md:items-center"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-ink">{item.title}</p>
+                    <p className="mt-1 text-xs text-stone-500">
+                      {labelFor(platformOptions, item.platform)} /{" "}
+                      {labelFor(contentTypeOptions, item.contentType)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => scheduleContentItem(item, addDaysFromToday(1))}
+                      className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+                    >
+                      明日
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scheduleContentItem(item, addDaysFromToday(3))}
+                      className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+                    >
+                      3日後
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scheduleContentItem(item, addDaysFromToday(7))}
+                      className="rounded-md bg-ink px-3 py-2 text-xs font-medium text-white"
+                    >
+                      7日後
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectContentItem(item)}
+                      className="rounded-md border border-champagne/60 bg-rose px-3 py-2 text-xs font-medium text-ink"
+                    >
+                      詳細編集
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Panel>
 
       <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <Panel title="テーマ管理">
@@ -1451,7 +1703,23 @@ export function DashboardClient({
                         </select>
                       </td>
                       <td className="border-b border-stone-100 px-3 py-3">
-                        {item.scheduledDate || "-"}
+                        <div className="flex min-w-40 flex-col gap-2">
+                          <input
+                            type="date"
+                            value={scheduledDateKey(item.scheduledDate)}
+                            onChange={(event) => scheduleContentItem(item, event.target.value)}
+                            className="rounded-md border border-stone-200 bg-white px-2 py-1 text-xs"
+                          />
+                          {item.scheduledDate ? (
+                            <button
+                              type="button"
+                              onClick={() => scheduleContentItem(item, "")}
+                              className="text-left text-xs font-medium text-stone-500 underline decoration-champagne underline-offset-4"
+                            >
+                              予定を解除
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="border-b border-stone-100 px-3 py-3">
                         <div className="flex gap-2">
