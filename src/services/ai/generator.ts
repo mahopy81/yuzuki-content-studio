@@ -8,6 +8,44 @@ type GenerateContentResult = {
   source: "claude" | "mock";
 };
 
+type AnthropicContentBlock = {
+  type?: string;
+  text?: string;
+  name?: string;
+  input?: unknown;
+};
+
+const contentSetTool = {
+  name: "create_content_set",
+  description: "Create the full Yuzuki Content Studio SNS content set.",
+  input_schema: {
+    type: "object",
+    additionalProperties: true,
+    required: [
+      "themeId",
+      "instagramCarousel",
+      "instagramCaption",
+      "instagramReel",
+      "youtube",
+      "youtubeLives",
+      "note",
+      "threads",
+      "x"
+    ],
+    properties: {
+      themeId: { type: "string" },
+      instagramCarousel: { type: "object", additionalProperties: true },
+      instagramCaption: { type: "object", additionalProperties: true },
+      instagramReel: { type: "object", additionalProperties: true },
+      youtube: { type: "object", additionalProperties: true },
+      youtubeLives: { type: "array", items: { type: "object", additionalProperties: true } },
+      note: { type: "object", additionalProperties: true },
+      threads: { type: "object", additionalProperties: true },
+      x: { type: "object", additionalProperties: true }
+    }
+  }
+};
+
 function extractJson(text: string) {
   const fenced = text.match(/```json\s*([\s\S]*?)```/i);
   if (fenced?.[1]) {
@@ -130,9 +168,14 @@ export async function generateContentSet({ theme }: GenerateContentInput): Promi
     },
     body: JSON.stringify({
       model,
-      max_tokens: 6000,
+      max_tokens: 12000,
       system:
-        "You are a senior Japanese SNS content strategist. Return valid JSON only, with no surrounding text.",
+        "You are a senior Japanese SNS content strategist. Use the provided tool and do not answer with plain text.",
+      tools: [contentSetTool],
+      tool_choice: {
+        type: "tool",
+        name: contentSetTool.name
+      },
       messages: [
         {
           role: "user",
@@ -147,10 +190,23 @@ export async function generateContentSet({ theme }: GenerateContentInput): Promi
   }
 
   const payload = (await response.json()) as {
-    content?: { type?: string; text?: string }[];
+    content?: AnthropicContentBlock[];
   };
+  const toolInput = payload.content?.find(
+    (item) => item.type === "tool_use" && item.name === contentSetTool.name
+  )?.input;
   const text = payload.content?.find((item) => item.type === "text")?.text ?? "";
-  const parsed = JSON.parse(extractJson(text)) as unknown;
+  let parsed = toolInput;
+
+  if (!parsed) {
+    try {
+      parsed = JSON.parse(extractJson(text)) as unknown;
+    } catch {
+      throw new Error(
+        "Claudeの返答を読み取れませんでした。もう一度「一括生成」を押してください。続く場合はANTHROPIC_MODELを確認してください。"
+      );
+    }
+  }
 
   if (!isGeneratedContentSet(parsed)) {
     throw new Error("Claude response did not match the expected content JSON shape.");

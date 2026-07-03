@@ -1595,7 +1595,12 @@ export function DashboardClient({
 
       if (generatedData) {
         setContentItems((current) => [...generatedData.contentItems, ...current]);
-        setNotice("テーマから各媒体のコンテンツ案を一括生成し、Notionに保存しました。");
+        setActiveSection("status");
+        const sourceLabel =
+          generatedData.source === "claude" ? "Claude Opus" : "モック生成";
+        setNotice(
+          `${sourceLabel}で${generatedData.contentItems.length}件のコンテンツ案を一括生成しました。「投稿管理」に表示しています。`
+        );
         return;
       }
 

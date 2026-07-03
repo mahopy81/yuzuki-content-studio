@@ -406,7 +406,7 @@ export async function createSampleDataAction(): Promise<
 
 export async function generateContentSetAction(
   theme: Theme
-): Promise<ActionResult<{ contentItems: ContentItem[] }>> {
+): Promise<ActionResult<{ contentItems: ContentItem[]; source: "claude" | "mock" }>> {
   try {
     const userId = await getUserId();
     const generatedResult = await generateContentSet({ theme });
@@ -489,7 +489,7 @@ export async function generateContentSetAction(
     const contentItems = await Promise.all(inputs.map((input) => createContentItem(input)));
 
     revalidatePath("/dashboard");
-    return { ok: true, data: { contentItems } };
+    return { ok: true, data: { contentItems, source: generatedResult.source } };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
