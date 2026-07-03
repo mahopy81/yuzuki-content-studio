@@ -23,7 +23,9 @@ import {
 } from "@/services/notion/imageProjects";
 import { generateContentSet } from "@/services/ai/generator";
 import { generatedContentToText } from "@/services/ai/mockContent";
+import { getActiveThemeOptionsGroupedByCategory } from "@/services/notion/themeOptions";
 import { createTheme, deleteTheme, listThemes, updateTheme } from "@/services/notion/themes";
+import { themeOptionCategories } from "@/types/content";
 import type {
   ContentItem,
   ContentItemInput,
@@ -34,7 +36,8 @@ import type {
   ImageProjectInput,
   ImageProjectType,
   Theme,
-  ThemeInput
+  ThemeInput,
+  ThemeOptionGroups
 } from "@/types/content";
 
 type ActionResult<T> = {
@@ -60,6 +63,13 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "処理に失敗しました。";
 }
 
+function emptyThemeOptionGroups(): ThemeOptionGroups {
+  return themeOptionCategories.reduce((groups, category) => {
+    groups[category] = [];
+    return groups;
+  }, {} as ThemeOptionGroups);
+}
+
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
@@ -72,11 +82,16 @@ export async function getDashboardData(): Promise<
     contentItems: ContentItem[];
     imageProjects: ImageProject[];
     analysisItems: Analysis[];
+    themeOptions: ThemeOptionGroups;
   }>
 > {
   try {
     await getUserId();
-    const [themes, contentItems] = await Promise.all([listThemes(), listContentItems()]);
+    const [themes, contentItems, themeOptions] = await Promise.all([
+      listThemes(),
+      listContentItems(),
+      getActiveThemeOptionsGroupedByCategory().catch(() => emptyThemeOptionGroups())
+    ]);
     const imageProjects = await listImageProjects().catch(() => []);
     const analysisItems = await listAnalysis().catch(() => []);
 
@@ -86,7 +101,8 @@ export async function getDashboardData(): Promise<
         themes,
         contentItems,
         imageProjects,
-        analysisItems
+        analysisItems,
+        themeOptions
       }
     };
   } catch (error) {
@@ -96,7 +112,8 @@ export async function getDashboardData(): Promise<
         themes: [],
         contentItems: [],
         imageProjects: [],
-        analysisItems: []
+        analysisItems: [],
+        themeOptions: emptyThemeOptionGroups()
       },
       error: errorMessage(error)
     };

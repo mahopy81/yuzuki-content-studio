@@ -80,20 +80,52 @@ function isGeneratedContentSet(value: unknown): value is GeneratedContentSet {
   );
 }
 
+function themeOptionPrompt(label: string, selection: GenerateContentInput["theme"]["targetOption"]) {
+  if (!selection) {
+    return `${label}:`;
+  }
+
+  return [
+    `${label}:`,
+    selection.optionName ? `Name: ${selection.optionName}` : "",
+    selection.description ? `Description: ${selection.description}` : "",
+    selection.promptSnippet ? `Prompt Snippet: ${selection.promptSnippet}` : "",
+    selection.useCase ? `Use Case: ${selection.useCase}` : "",
+    selection.customText ? `Custom Text: ${selection.customText}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function buildPrompt({ theme }: GenerateContentInput) {
+  const targetPrompt = theme.targetOption?.promptSnippet || theme.targetAudience;
+  const painPrompt = theme.painOption?.promptSnippet || theme.painPoint;
+  const desiredPrompt = theme.desiredOutcomeOption?.promptSnippet || theme.desiredOutcome;
+  const ctaPrompt = theme.ctaOption?.promptSnippet || theme.cta;
+  const offerPrompt = theme.offerOption?.promptSnippet || theme.offer || "";
+  const anglePrompt = theme.angleOption?.promptSnippet || theme.angle;
+
   return `
 Yuzuki Content Studio用にSNS投稿セットを作ってください。
 必ずJSONだけを返してください。説明文、Markdown、コードフェンスは禁止です。
 
 テーマ:
 - mainTheme: ${theme.mainTheme}
-- targetAudience: ${theme.targetAudience}
-- painPoint: ${theme.painPoint}
-- desiredOutcome: ${theme.desiredOutcome}
+- targetAudience: ${targetPrompt}
+- painPoint: ${painPrompt}
+- desiredOutcome: ${desiredPrompt}
 - purpose: ${theme.purpose}
-- cta: ${theme.cta}
-- offer: ${theme.offer ?? ""}
-- angle: ${theme.angle}
+- cta: ${ctaPrompt}
+- offer: ${offerPrompt}
+- angle: ${anglePrompt}
+
+Option Details:
+${themeOptionPrompt("Target Audience", theme.targetOption)}
+${themeOptionPrompt("Pain Point", theme.painOption)}
+${themeOptionPrompt("Desired Outcome", theme.desiredOutcomeOption)}
+${themeOptionPrompt("CTA", theme.ctaOption)}
+${themeOptionPrompt("Offer", theme.offerOption)}
+${themeOptionPrompt("Angle", theme.angleOption)}
 
 JSONの形:
 {

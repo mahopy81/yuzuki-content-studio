@@ -14,6 +14,7 @@ export function getNotionDatabaseIds() {
     imageProjects: process.env.NOTION_IMAGE_PROJECTS_DB_ID ?? "",
     analysis: process.env.NOTION_ANALYSIS_DB_ID ?? "",
     assets: process.env.NOTION_ASSETS_DB_ID ?? "",
-    promptTemplates: process.env.NOTION_PROMPT_TEMPLATES_DB_ID ?? ""
+    promptTemplates: process.env.NOTION_PROMPT_TEMPLATES_DB_ID ?? "",
+    themeOptions: process.env.NOTION_THEME_OPTIONS_DB_ID ?? ""
   };
 }

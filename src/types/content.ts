@@ -184,6 +184,42 @@ export type YouTubeLivePlan = {
   repurposeIdeas: string[];
 };
 
+export const themeOptionCategories = [
+  "Target Audience",
+  "Pain Point",
+  "Desired Outcome",
+  "CTA",
+  "Offer",
+  "Angle"
+] as const;
+
+export type ThemeOptionCategory = (typeof themeOptionCategories)[number];
+
+export type ThemeOption = {
+  id: string;
+  notionPageId?: string;
+  name: string;
+  category: ThemeOptionCategory;
+  description?: string;
+  promptSnippet?: string;
+  useCase?: string;
+  priority?: number;
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ThemeOptionGroups = Record<ThemeOptionCategory, ThemeOption[]>;
+
+export type ThemeOptionSelection = {
+  optionId?: string;
+  optionName?: string;
+  description?: string;
+  promptSnippet?: string;
+  useCase?: string;
+  customText?: string;
+};
+
 export type Theme = {
   id: string;
   notionPageId?: string;
@@ -191,12 +227,24 @@ export type Theme = {
   week: string;
   mainTheme: string;
   targetAudience: string;
+  targetOptionId?: string;
+  targetOption?: ThemeOptionSelection;
   painPoint: string;
+  painOptionId?: string;
+  painOption?: ThemeOptionSelection;
   desiredOutcome: string;
+  desiredOutcomeOptionId?: string;
+  desiredOutcomeOption?: ThemeOptionSelection;
   purpose: string;
   cta: string;
+  ctaOptionId?: string;
+  ctaOption?: ThemeOptionSelection;
   offer?: string;
+  offerOptionId?: string;
+  offerOption?: ThemeOptionSelection;
   angle: string;
+  angleOptionId?: string;
+  angleOption?: ThemeOptionSelection;
   memo?: string;
   status: ThemeStatus;
   createdAt: string;

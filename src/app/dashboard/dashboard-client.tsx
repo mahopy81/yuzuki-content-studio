@@ -50,6 +50,10 @@ import {
   type Platform,
   type Theme,
   type ThemeInput,
+  type ThemeOption,
+  type ThemeOptionCategory,
+  type ThemeOptionGroups,
+  type ThemeOptionSelection,
   type ThemeStatus,
   type Slide,
   type SlideElement,
@@ -63,6 +67,7 @@ type DashboardClientProps = {
   initialContentItems: ContentItem[];
   initialImageProjects: ImageProject[];
   initialAnalysisItems: Analysis[];
+  initialThemeOptions?: ThemeOptionGroups;
   initialError?: string;
   userEmail?: string | null;
 };
@@ -124,6 +129,116 @@ const emptyThemeForm: ThemeInput = {
   memo: "",
   status: "idea"
 };
+
+const themeOptionCategories: ThemeOptionCategory[] = [
+  "Target Audience",
+  "Pain Point",
+  "Desired Outcome",
+  "CTA",
+  "Offer",
+  "Angle"
+];
+
+const themeOptionFieldConfigs = [
+  {
+    label: "ターゲット",
+    category: "Target Audience",
+    textKey: "targetAudience",
+    optionIdKey: "targetOptionId",
+    optionKey: "targetOption"
+  },
+  {
+    label: "読者の悩み",
+    category: "Pain Point",
+    textKey: "painPoint",
+    optionIdKey: "painOptionId",
+    optionKey: "painOption"
+  },
+  {
+    label: "理想状態",
+    category: "Desired Outcome",
+    textKey: "desiredOutcome",
+    optionIdKey: "desiredOutcomeOptionId",
+    optionKey: "desiredOutcomeOption"
+  },
+  {
+    label: "CTA",
+    category: "CTA",
+    textKey: "cta",
+    optionIdKey: "ctaOptionId",
+    optionKey: "ctaOption"
+  },
+  {
+    label: "商品導線",
+    category: "Offer",
+    textKey: "offer",
+    optionIdKey: "offerOptionId",
+    optionKey: "offerOption"
+  },
+  {
+    label: "訴求角度",
+    category: "Angle",
+    textKey: "angle",
+    optionIdKey: "angleOptionId",
+    optionKey: "angleOption"
+  }
+] as const;
+
+type ThemeOptionFieldConfig = (typeof themeOptionFieldConfigs)[number];
+
+function createEmptyThemeOptionGroups(): ThemeOptionGroups {
+  return themeOptionCategories.reduce((groups, category) => {
+    groups[category] = [];
+    return groups;
+  }, {} as ThemeOptionGroups);
+}
+
+function findThemeOption(
+  groups: ThemeOptionGroups,
+  category: ThemeOptionCategory,
+  optionId?: string
+) {
+  if (!optionId) {
+    return undefined;
+  }
+
+  return groups[category].find((option) => option.id === optionId);
+}
+
+function toThemeOptionSelection(
+  option: ThemeOption | undefined,
+  customText?: string
+): ThemeOptionSelection | undefined {
+  if (!option && !customText?.trim()) {
+    return undefined;
+  }
+
+  return {
+    optionId: option?.id,
+    optionName: option?.name,
+    description: option?.description,
+    promptSnippet: option?.promptSnippet,
+    useCase: option?.useCase,
+    customText: customText?.trim()
+  };
+}
+
+function applyThemeOptionSelections(input: ThemeInput, groups: ThemeOptionGroups): ThemeInput {
+  const next = { ...input };
+
+  for (const config of themeOptionFieldConfigs) {
+    const optionId = String(next[config.optionIdKey] ?? "");
+    const option = findThemeOption(groups, config.category, optionId);
+    const customText = String(next[config.textKey] ?? "").trim();
+    const textValue = customText || option?.name || "";
+
+    next[config.textKey] = textValue;
+    next[config.optionIdKey] = option?.id ?? optionId;
+    next[config.optionKey] = toThemeOptionSelection(option, textValue);
+  }
+
+  return next;
+}
 
 const emptyContentForm: ContentItemInput = {
   themeId: "",
@@ -1033,6 +1148,7 @@ export function DashboardClient({
   initialContentItems,
   initialImageProjects,
   initialAnalysisItems,
+  initialThemeOptions,
   initialError,
   userEmail
 }: DashboardClientProps) {
@@ -1049,6 +1165,9 @@ export function DashboardClient({
   );
   const [analysisItems, setAnalysisItems] = useState(
     backup?.analysisItems ?? initialAnalysisItems
+  );
+  const [themeOptions] = useState<ThemeOptionGroups>(
+    initialThemeOptions ?? createEmptyThemeOptionGroups()
   );
   const [themeForm, setThemeForm] = useState<ThemeInput>(emptyThemeForm);
   const [contentForm, setContentForm] = useState<ContentItemInput>(emptyContentForm);
@@ -1184,12 +1303,25 @@ export function DashboardClient({
       week: theme.week,
       mainTheme: theme.mainTheme,
       targetAudience: theme.targetAudience,
+      targetOptionId: theme.targetOptionId ?? theme.targetOption?.optionId ?? "",
+      targetOption: theme.targetOption,
       painPoint: theme.painPoint,
+      painOptionId: theme.painOptionId ?? theme.painOption?.optionId ?? "",
+      painOption: theme.painOption,
       desiredOutcome: theme.desiredOutcome,
+      desiredOutcomeOptionId:
+        theme.desiredOutcomeOptionId ?? theme.desiredOutcomeOption?.optionId ?? "",
+      desiredOutcomeOption: theme.desiredOutcomeOption,
       purpose: theme.purpose || "LINE登録",
       cta: theme.cta,
+      ctaOptionId: theme.ctaOptionId ?? theme.ctaOption?.optionId ?? "",
+      ctaOption: theme.ctaOption,
       offer: theme.offer ?? "",
+      offerOptionId: theme.offerOptionId ?? theme.offerOption?.optionId ?? "",
+      offerOption: theme.offerOption,
       angle: theme.angle,
+      angleOptionId: theme.angleOptionId ?? theme.angleOption?.optionId ?? "",
+      angleOption: theme.angleOption,
       memo: theme.memo ?? "",
       status: theme.status
     });
@@ -1331,11 +1463,11 @@ export function DashboardClient({
 
   function submitTheme() {
     startTransition(async () => {
-      const input = {
+      const input = applyThemeOptionSelections({
         ...themeForm,
         mainTheme: themeForm.mainTheme.trim(),
         week: themeForm.week.trim()
-      };
+      }, themeOptions);
 
       if (!input.mainTheme || !input.week) {
         setNotice("テーマ名と週は必須です。");
@@ -1832,7 +1964,11 @@ export function DashboardClient({
   function generateContentSet(theme: Theme) {
     setGeneratingThemeId(theme.id);
     startTransition(async () => {
-      const result = await generateContentSetAction(theme);
+      const enrichedTheme = {
+        ...theme,
+        ...applyThemeOptionSelections(theme, themeOptions)
+      };
+      const result = await generateContentSetAction(enrichedTheme);
       setGeneratingThemeId(null);
 
       const generatedData = result.data;
@@ -2476,36 +2612,38 @@ export function DashboardClient({
               options={purposeOptions}
               onChange={(value) => setThemeForm((form) => ({ ...form, purpose: value }))}
             />
-            <TextAreaField
-              label="ターゲット"
-              value={themeForm.targetAudience}
-              onChange={(value) => setThemeForm((form) => ({ ...form, targetAudience: value }))}
-            />
-            <TextAreaField
-              label="読者の悩み"
-              value={themeForm.painPoint}
-              onChange={(value) => setThemeForm((form) => ({ ...form, painPoint: value }))}
-            />
-            <TextAreaField
-              label="理想状態"
-              value={themeForm.desiredOutcome}
-              onChange={(value) => setThemeForm((form) => ({ ...form, desiredOutcome: value }))}
-            />
-            <TextAreaField
-              label="CTA"
-              value={themeForm.cta}
-              onChange={(value) => setThemeForm((form) => ({ ...form, cta: value }))}
-            />
-            <TextField
-              label="商品導線"
-              value={themeForm.offer ?? ""}
-              onChange={(value) => setThemeForm((form) => ({ ...form, offer: value }))}
-            />
-            <TextField
-              label="訴求角度"
-              value={themeForm.angle}
-              onChange={(value) => setThemeForm((form) => ({ ...form, angle: value }))}
-            />
+            {themeOptionFieldConfigs.map((config) => (
+              <ThemeOptionField
+                key={config.category}
+                config={config}
+                value={String(themeForm[config.textKey] ?? "")}
+                optionId={String(themeForm[config.optionIdKey] ?? "")}
+                options={themeOptions[config.category]}
+                onOptionChange={(optionId) => {
+                  const option = findThemeOption(themeOptions, config.category, optionId);
+                  setThemeForm((form) => ({
+                    ...form,
+                    [config.optionIdKey]: option?.id ?? "",
+                    [config.optionKey]: toThemeOptionSelection(option, option?.name),
+                    [config.textKey]: option?.name ?? ""
+                  }));
+                }}
+                onTextChange={(value) =>
+                  setThemeForm((form) => ({
+                    ...form,
+                    [config.textKey]: value,
+                    [config.optionKey]: toThemeOptionSelection(
+                      findThemeOption(
+                        themeOptions,
+                        config.category,
+                        String(form[config.optionIdKey] ?? "")
+                      ),
+                      value
+                    )
+                  }))
+                }
+              />
+            ))}
             <div className="md:col-span-2">
               <TextAreaField
                 label="参考メモ"
@@ -4173,6 +4311,55 @@ function MiniList({
           <li className="rounded-md bg-white/70 px-3 py-2">{emptyText}</li>
         )}
       </ul>
+    </div>
+  );
+}
+
+function ThemeOptionField({
+  config,
+  value,
+  optionId,
+  options,
+  onOptionChange,
+  onTextChange
+}: {
+  config: ThemeOptionFieldConfig;
+  value: string;
+  optionId: string;
+  options: ThemeOption[];
+  onOptionChange: (optionId: string) => void;
+  onTextChange: (value: string) => void;
+}) {
+  const selectedOption = options.find((option) => option.id === optionId);
+
+  return (
+    <div className="rounded-md border border-stone-200 bg-white/55 p-3">
+      <SelectSimpleField
+        label={`${config.label}：Notion選択肢`}
+        value={optionId}
+        options={[
+          { value: "", label: "選択しない" },
+          ...options.map((option) => ({
+            value: option.id,
+            label: option.name
+          }))
+        ]}
+        onChange={onOptionChange}
+      />
+      {selectedOption ? (
+        <div className="mt-2 rounded-md bg-rose/70 px-3 py-2 text-xs leading-5 text-stone-600">
+          {selectedOption.description ? <p>{selectedOption.description}</p> : null}
+          {selectedOption.useCase ? <p className="mt-1">使い方: {selectedOption.useCase}</p> : null}
+        </div>
+      ) : null}
+      <div className="mt-3">
+        <TextAreaField
+          label={`${config.label}：カスタム入力`}
+          value={value}
+          rows={3}
+          onChange={onTextChange}
+        />
+      </div>
     </div>
   );
 }

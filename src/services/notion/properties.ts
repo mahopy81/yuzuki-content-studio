@@ -56,6 +56,12 @@ export function numberProperty(value?: number) {
   };
 }
 
+export function checkboxProperty(value?: boolean) {
+  return {
+    checkbox: Boolean(value)
+  };
+}
+
 export function urlProperty(value?: string) {
   return {
     url: value || null
@@ -132,6 +138,16 @@ export function readNumber(properties: unknown, key: string) {
   }
 
   return (property as { number?: number | null }).number ?? undefined;
+}
+
+export function readCheckbox(properties: unknown, key: string) {
+  const property = getProperty(properties, key);
+
+  if (!property || typeof property !== "object" || !("checkbox" in property)) {
+    return false;
+  }
+
+  return Boolean((property as { checkbox?: boolean }).checkbox);
 }
 
 export function readUrl(properties: unknown, key: string) {
