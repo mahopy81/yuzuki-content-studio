@@ -75,6 +75,7 @@ type BackupData = {
 };
 
 type DashboardSection =
+  | "guide"
   | "overview"
   | "themes"
   | "content"
@@ -98,6 +99,7 @@ const editorPreviewScale = 0.34;
 const safeAreaMargin = 80;
 
 const navItems: { value: DashboardSection; label: string; description: string }[] = [
+  { value: "guide", label: "使い方", description: "最初に見る" },
   { value: "overview", label: "ダッシュボード", description: "全体状況" },
   { value: "themes", label: "テーマ管理", description: "週テーマ" },
   { value: "content", label: "投稿作成", description: "本文・台本" },
@@ -822,7 +824,7 @@ export function DashboardClient({
   const [creatingImageForContentId, setCreatingImageForContentId] = useState<string | null>(null);
   const [generatingThemeId, setGeneratingThemeId] = useState<string | null>(null);
   const [scheduleMonth, setScheduleMonth] = useState(() => formatMonthInput(new Date()));
-  const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
+  const [activeSection, setActiveSection] = useState<DashboardSection>("guide");
   const [liveTypeFilter, setLiveTypeFilter] = useState<LiveStreamType | "all">("all");
   const [selectedLiveThemeId, setSelectedLiveThemeId] = useState("");
   const [notice, setNotice] = useState(
@@ -1820,6 +1822,126 @@ export function DashboardClient({
         <div className="rounded-md border border-champagne/50 bg-white/78 px-4 py-3 text-sm text-ink">
           {notice}
         </div>
+      ) : null}
+
+      {activeSection === "guide" ? (
+      <Panel title="Yuzuki Content Studioの使い方">
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3">
+            {[
+              {
+                step: "1",
+                title: "テーマを決める",
+                body: "左メニューの「テーマ管理」を開き、今週の発信テーマ、届けたい相手、悩み、CTAを入力します。最初は「サンプルデータ投入」でもOKです。",
+                action: "テーマ管理を開く",
+                section: "themes" as DashboardSection
+              },
+              {
+                step: "2",
+                title: "投稿を一括生成する",
+                body: "テーマ一覧で「一括生成」を押すと、Instagram、X、Threads、note、YouTube、ライブ企画の下書きが作られます。Claude Opusを設定済みなら文章生成にClaudeを使います。",
+                action: "テーマ一覧へ進む",
+                section: "themes" as DashboardSection
+              },
+              {
+                step: "3",
+                title: "文章を編集する",
+                body: "「投稿作成」で投稿本文、キャプション、台本、note記事、ライブ台本を整えます。編集したら「投稿を保存」を押します。",
+                action: "投稿作成を開く",
+                section: "content" as DashboardSection
+              },
+              {
+                step: "4",
+                title: "画像を作る",
+                body: "「画像エディタ」でカルーセル、X画像、Threads画像を作ります。文字をクリックして選択、ドラッグで移動、最後にPNGを書き出します。",
+                action: "画像エディタを開く",
+                section: "images" as DashboardSection
+              },
+              {
+                step: "5",
+                title: "投稿予定を決める",
+                body: "「カレンダー」または「投稿管理」で投稿予定日を入れます。ステータスを予約済み、投稿済みなどに変えて進行を管理します。",
+                action: "カレンダーを開く",
+                section: "calendar" as DashboardSection
+              },
+              {
+                step: "6",
+                title: "投稿後に分析する",
+                body: "投稿後は「分析管理」で表示回数、保存、いいね、LINE登録などを入力します。保存率や反応率は自動計算されます。",
+                action: "分析管理を開く",
+                section: "analysis" as DashboardSection
+              }
+            ].map((item) => (
+              <div key={item.step} className="rounded-lg border border-stone-200 bg-white/72 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="flex gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-sm font-semibold text-white">
+                      {item.step}
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold text-ink">{item.title}</h3>
+                      <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSection(item.section)}
+                    className="shrink-0 rounded-md border border-champagne/60 bg-rose px-3 py-2 text-xs font-medium text-ink"
+                  >
+                    {item.action}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+              <h3 className="text-base font-semibold text-ink">おすすめの最短ルート</h3>
+              <ol className="mt-3 space-y-2 text-sm leading-6 text-stone-600">
+                <li>1. 「テーマ管理」でテーマを作る</li>
+                <li>2. 「一括生成」を押す</li>
+                <li>3. 「投稿作成」で文章を直す</li>
+                <li>4. 「画像エディタ」で画像を作る</li>
+                <li>5. 「投稿管理」で日付とステータスを整える</li>
+              </ol>
+            </div>
+
+            <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+              <h3 className="text-base font-semibold text-ink">Claude Opusを使うには</h3>
+              <p className="mt-2 text-sm leading-6 text-stone-600">
+                VercelのEnvironment Variablesに `ANTHROPIC_API_KEY` と `ANTHROPIC_MODEL` を入れると、
+                テーマの一括生成時にClaude Opusで文章を作れます。
+              </p>
+              <code className="mt-3 block rounded-md bg-stone-100 px-3 py-2 text-xs text-stone-700">
+                ANTHROPIC_MODEL=claude-opus-4-8
+              </code>
+            </div>
+
+            <div className="rounded-lg border border-stone-200 bg-white/72 p-4">
+              <h3 className="text-base font-semibold text-ink">困ったとき</h3>
+              <p className="mt-2 text-sm leading-6 text-stone-600">
+                まず「データ管理」でJSONを書き出してバックアップしてください。その後、Notion接続テストを押すと保存先の接続確認ができます。
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("data")}
+                  className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+                >
+                  データ管理を開く
+                </button>
+                <a
+                  href="/api/notion/test"
+                  className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-medium"
+                >
+                  Notion接続テスト
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Panel>
       ) : null}
 
       {activeSection === "overview" ? (
